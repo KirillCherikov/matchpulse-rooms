@@ -14,7 +14,7 @@ Narration: “Book percentage is the sum of implied probabilities; classical ove
 
 ## 0:55–2:20 — Causal event-confirmed movement
 
-Open the dashboard. Click **Reset**, then **Next event** five times.
+Open <https://txline-sentinel.onrender.com>. Click **Reset**, then **Next event** five times.
 
 Show:
 
@@ -48,7 +48,7 @@ Show audit timeline and `/docs`. Explain that inputs, normalized records, alerts
 
 ## 4:40–5:00 — TxLINE and honest status
 
-“Replay makes the complete decision system judgeable now. The provider boundary is ready for official TxLINE schemas, but the current build calls no TxLINE data endpoint and performs no transaction. Public deployment is pending platform authorization.”
+“Replay makes the complete decision system judgeable now at the public Render URL. The provider boundary is ready for official TxLINE schemas, but the current build calls no TxLINE data endpoint and performs no transaction.”
 
 Mention [API feedback](API_FEEDBACK.md).
 
@@ -66,10 +66,17 @@ Mention [API feedback](API_FEEDBACK.md).
 
 ## Backup terminal flow
 
+Terminal A — build and keep the server running:
+
 ```bash
 npm run build
 npm start
+```
+
+Terminal B — run an independent deterministic CLI evaluation:
+
+```bash
 npm run cli -- replay run
 ```
 
-If a public deployment is unavailable, run the Docker flow from `DEPLOYMENT.md` and record localhost in the demo. If the browser flow fails, show CLI replay JSON and OpenAPI using the same deterministic fixture.
+If the public deployment is temporarily unavailable, run the Docker flow from `DEPLOYMENT.md` and record localhost in the demo. If the browser flow fails, show CLI replay JSON and OpenAPI using the same deterministic fixture.

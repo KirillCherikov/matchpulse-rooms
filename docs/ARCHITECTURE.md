@@ -58,7 +58,7 @@ The correlator never uses absolute timestamp distance or an event received after
 
 ## State ownership
 
-The MVP intentionally uses one in-memory agent per server process. Reset creates a new run namespace and clears all dynamic decision state; process-level audit records remain append-only. This makes the local judge path simple and reproducible but means:
+The MVP intentionally uses one in-memory agent per isolated replay session inside a single server process. Reset creates a new run namespace and clears that session's dynamic decision state; its audit records remain append-only. This makes the local judge path simple and reproducible but means:
 
 - process restart loses all state;
 - multiple replicas do not share state;
@@ -72,7 +72,7 @@ Strategy configuration version, signal thresholds, score weights, data-quality t
 
 ## Interface security
 
-Cross-origin access is disabled unless `CORS_ORIGIN` is explicitly set, and replay writes reject mismatched browser origins. The same-origin judge dashboard receives an opaque HttpOnly, SameSite session cookie; production deployment sets its Secure attribute. This isolates replay state but does not authenticate a person, so the service is not an untrusted multi-tenant control plane.
+Cross-origin access is disabled unless `CORS_ORIGIN` is explicitly set, and replay writes reject mismatched browser origins. The optional origin supports stateless browser API access; the current cookie-backed dashboard and replay controls remain a same-origin deployment. The judge dashboard receives an opaque HttpOnly, SameSite session cookie, and production sets its Secure attribute. This isolates replay state but does not authenticate a person, so the service is not an untrusted multi-tenant control plane.
 
 ## Live integration boundary
 

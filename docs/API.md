@@ -11,7 +11,7 @@ Registered schemas cover fixtures, replay state, agent status, signals, operatio
 | GET    | `/health` | Process liveness.                                                         |
 | GET    | `/ready`  | Provider readiness; unavailable live mode returns HTTP 503 with a reason. |
 
-Replay and mock modes are ready without credentials. Health does not imply that the intentionally incomplete live adapter is ready.
+Replay and mock modes are ready without credentials. Health does not imply that the intentionally incomplete live adapter is ready. `/ready` is session-free and does not allocate a replay agent or set a session cookie.
 
 ## Read APIs
 
@@ -51,20 +51,27 @@ Malformed control data returns HTTP 400. Replay operations in a mode without rep
 Example:
 
 ```bash
-curl -X POST http://localhost:3000/api/replay/reset
-curl -X POST http://localhost:3000/api/replay/advance
-curl http://localhost:3000/api/signals
-curl 'http://localhost:3000/api/audit?limit=100'
+BASE_URL="${BASE_URL:-https://txline-sentinel.onrender.com}"
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST "$BASE_URL/api/replay/reset"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST "$BASE_URL/api/replay/advance"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/signals"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/audit?limit=100"
 ```
+
+The cookie jar is required because every replay session is isolated by its opaque session cookie. Set `BASE_URL=http://localhost:3000` to run the same sequence against a local server.
 
 ## Current limitations
 
 - Each browser receives an isolated replay agent through an opaque HttpOnly, SameSite session cookie.
 - The registry is bounded to 32 sessions with a 30-minute idle lifetime, and each append-only audit log fails closed at 2,000 events.
+- When all 32 non-expired replay sessions are occupied, creation of a new session returns HTTP 503 instead of evicting an active judge session.
 - Read collections other than audit are not paginated because the synthetic run is bounded.
 - There is no live ingestion HTTP endpoint or completed TxLINE network transport.
 - Replay mutation endpoints isolate session state and reject cross-origin browser writes, but the cookie is not user authentication.
 - State is not durable and is lost on restart.
-- CORS is disabled by default; set one trusted `CORS_ORIGIN` only when a separate frontend requires it.
+- CORS is disabled by default. One exact `CORS_ORIGIN` can expose stateless browser API reads, but the current cookie-backed dashboard and replay controls are intentionally same-origin and are not a supported cross-origin frontend deployment.
 
 These constraints are acceptable for the local and judge path; durable identity, storage, rate limiting, and replica coordination remain required before multi-tenant deployment.

@@ -6,7 +6,7 @@ TxLINE Sentinel
 
 ## Tagline
 
-Explainable real-time sports market intelligence powered by TxLINE.
+Explainable real-time sports market intelligence designed for TxLINE.
 
 ## Short description
 
@@ -24,12 +24,12 @@ Odds movement alone is insufficient for professional market operations. Teams ne
 - Zod validation before live normalization.
 - Explicit book percentage, classical overround, proportional margin removal, movement, velocity, acceleration, and rolling baseline.
 - Causal confirmed-event correlation with separate post-event and late-confirmation relationships and no look-ahead.
-- Separate stale, duplicate-ID, duplicate-sequence, out-of-order, gap, delay, invalid-timestamp, divergence, and recovery sentinel.
+- Separate stale, duplicate-ID, duplicate-sequence, out-of-order, gap, delay, invalid-timestamp, terminal-event rejection, divergence, and recovery sentinel.
 - Transparent Rule-based confidence score with stored components, typed weights, configuration version, and quality penalties.
 - Risk-capped paper simulation with confirmed full-time, draw-selection, cancellation/postponement void, idempotent settlement, virtual P&L, and settled-equity drawdown.
 - 30/60/300-second counterfactual retained-movement classification.
 - Run-scoped append-only audit, REST/OpenAPI, one-shot CLI tools, and a technical judge dashboard.
-- Optional outbound Telegram signal/critical-alert/recovery notifications and local command-response rendering.
+- Optional outbound Telegram signal/critical-alert/recovery notifications for trusted runtimes, plus local command-response rendering; anonymous replay sessions force delivery off.
 
 ## TxLINE use
 
@@ -44,8 +44,10 @@ The product targets sports trading operations, sportsbook risk teams, data provi
 ## Links
 
 - GitHub: `https://github.com/KirillCherikov/matchpulse-rooms`
-- Deployment URL: `TBD after deployment authorization`
-- API URL: `TBD after deployment authorization`
+- Deployment URL: `https://txline-sentinel.onrender.com`
+- OpenAPI URL: `https://txline-sentinel.onrender.com/docs`
+- Machine-readable OpenAPI: `https://txline-sentinel.onrender.com/docs/json`
+- Status API: `https://txline-sentinel.onrender.com/api/agent/status`
 - Demo video: `TBD`
 
 ## Honest limitations
@@ -56,8 +58,8 @@ The product targets sports trading operations, sportsbook risk teams, data provi
 - Browser replay sessions are isolated in a bounded in-memory registry but remain anonymous and non-durable.
 - The Rule-based confidence score is not statistically calibrated.
 - Signal precision is 60-second movement persistence, not outcome accuracy or proof of profitability.
-- Telegram has outbound notifications and local renderers but no inbound bot receiver.
-- Public deployment and demo video require external platform actions.
+- Telegram has trusted-runtime outbound notifications and local renderers but no inbound bot receiver; the public replay deployment keeps delivery disabled.
+- A demo video still requires an external recording/upload action.
 
 ## API feedback
 

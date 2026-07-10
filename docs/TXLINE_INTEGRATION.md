@@ -12,7 +12,7 @@ No endpoint path, authentication header, program ID, IDL, token mint, proof sche
 
 - <https://txline.txodds.com/documentation/quickstart>
 - <https://txline.txodds.com/documentation/worldcup>
-- <https://txline.txodds.com/llms.txt>
+- <https://txline.txodds.com/llms.txt> — documented machine index, currently returning HTTP 404
 
 The default devnet origin in `.env.example` is taken from the official World Cup documentation. An origin alone is not treated as a completed transport contract.
 
@@ -20,13 +20,13 @@ The default devnet origin in `.env.example` is taken from the official World Cup
 
 The repository has no configured live credentials, no activated disposable devnet subscription, no committed matching IDL/types, and no implemented mapping from an official raw response to the domain models. No TxLINE network call or on-chain transaction is made.
 
-During verification on July 10, 2026, the official Quickstart and World Cup pages were reachable, but the documented `https://txline.txodds.com/llms.txt` index returned HTTP 404. That missing index is recorded as an upstream documentation blocker; it is not bypassed by guessing data endpoint paths or response schemas.
+During verification on July 10, 2026, the official Quickstart and World Cup pages were reachable, but the documented `https://txline.txodds.com/llms.txt` index returned HTTP 404. The missing machine index is a documentation limitation, not the sole live-integration blocker: the human-readable official pages remain the source of truth, and this repository still lacks authorized credentials, matching artifacts, raw response mappings, and a tested transport.
 
 This blocker does not affect replay, signal detection, data-quality monitoring, paper simulation, REST/OpenAPI, CLI one-shot evaluation, or the judge dashboard.
 
 ## Safe activation checklist
 
-1. Re-read the official documentation and discover the exact API pages through `llms.txt`.
+1. Re-read the official Quickstart, World Cup, and linked API-reference pages; use `llms.txt` only if the official machine index is restored.
 2. Use a disposable devnet keypair outside this repository with mode `0600`.
 3. Verify the current network, RPC, program ID, token mint, matching IDL, and matching TypeScript types.
 4. Read the current on-chain pricing matrix.

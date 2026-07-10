@@ -6,7 +6,7 @@ TxLINE Sentinel's complete judge path is deterministic replay and requires no li
 
 ## Dashboard fast path
 
-1. Open the dashboard.
+1. Open <https://txline-sentinel.onrender.com> (or `http://localhost:3000` for the local backup).
 2. Confirm `Synthetic demo data — not a real match` and the simulation disclaimer.
 3. Click **Reset**, then **Next event** five times.
 4. Inspect the Home win normalized-probability movement and the latest confirmed goal.
@@ -23,20 +23,26 @@ Starting again after finished state begins a clean dynamic run. Prior audit even
 
 ## API path
 
-Open `/docs` for the interactive OpenAPI contract or `/docs/json` for the machine-readable form.
+Open <https://txline-sentinel.onrender.com/docs> for the interactive OpenAPI contract or `/docs/json` for the machine-readable form.
 
 Suggested sequence:
 
 ```bash
-curl -X POST http://localhost:3000/api/replay/reset
-curl -X POST http://localhost:3000/api/replay/advance
-curl http://localhost:3000/api/agent/status
-curl http://localhost:3000/api/signals
-curl http://localhost:3000/api/alerts
-curl http://localhost:3000/api/positions
-curl http://localhost:3000/api/analytics
-curl 'http://localhost:3000/api/audit?limit=100'
+BASE_URL="${BASE_URL:-https://txline-sentinel.onrender.com}"
+COOKIE_JAR="$(mktemp)"
+trap 'rm -f "$COOKIE_JAR"' EXIT
+
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST "$BASE_URL/api/replay/reset"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" -X POST "$BASE_URL/api/replay/advance"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/agent/status"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/signals"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/alerts"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/positions"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/analytics"
+curl -c "$COOKIE_JAR" -b "$COOKIE_JAR" "$BASE_URL/api/audit?limit=100"
 ```
+
+Keep the same cookie jar for the entire sequence; otherwise each request creates a different isolated replay session. Set `BASE_URL=http://localhost:3000` for the local backup.
 
 ## CLI backup
 

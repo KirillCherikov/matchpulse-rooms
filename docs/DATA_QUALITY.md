@@ -15,17 +15,18 @@ Issue-suppression memory is bounded as well. Reset clears all quality state, so 
 
 ## Alerts
 
-| Alert                   | Detection and action                                                                                                                                 |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `stale_feed`            | Silence exceeds the feed-specific received-time threshold; marks that feed stale and creates one critical alert.                                     |
-| `duplicate_update`      | Repeated ID or repeated current sequence; update is ignored.                                                                                         |
-| `out_of_order_update`   | Regressing sequence or source/received timestamp; update is ignored.                                                                                 |
-| `sequence_gap`          | Accepted sequence skips one or more values; processing continues with a warning.                                                                     |
-| `delayed_update`        | Nonnegative receive-minus-source latency exceeds the threshold.                                                                                      |
-| `feed_recovery`         | The first valid accepted update after a stale interval clears active stale state.                                                                    |
-| `odds_score_divergence` | Material odds movement lacks a causal, directionally consistent confirmed event, or an eligible confirmed event receives no market reaction in time. |
-| `invalid_timestamp`     | Timestamp is invalid or received time precedes source time; update is ignored.                                                                       |
-| `malformed_payload`     | Reserved for recording an adapter-level Zod validation failure.                                                                                      |
+| Alert                     | Detection and action                                                                                                                                 |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `stale_feed`              | Silence exceeds the feed-specific received-time threshold; marks that feed stale and creates one critical alert.                                     |
+| `duplicate_update`        | Repeated ID or repeated current sequence; update is ignored.                                                                                         |
+| `out_of_order_update`     | Regressing sequence or source/received timestamp; update is ignored.                                                                                 |
+| `sequence_gap`            | Accepted sequence skips one or more values; processing continues with a warning.                                                                     |
+| `delayed_update`          | Nonnegative receive-minus-source latency exceeds the threshold.                                                                                      |
+| `feed_recovery`           | The first valid accepted update after a stale interval clears active stale state.                                                                    |
+| `odds_score_divergence`   | Material odds movement lacks a causal, directionally consistent confirmed event, or an eligible confirmed event receives no market reaction in time. |
+| `invalid_timestamp`       | Timestamp is invalid or received time precedes source time; update is ignored.                                                                       |
+| `terminal_event_rejected` | A repeated or conflicting confirmed terminal event is ignored after the fixture has already reached a terminal state.                                |
+| `malformed_payload`       | Reserved for recording an adapter-level Zod validation failure.                                                                                      |
 
 Duplicate and out-of-order rejected records do not advance feed state. Score and odds sequence values are never compared to one another.
 

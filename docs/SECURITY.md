@@ -35,10 +35,11 @@ Every live payload must be validated against a schema derived from the official 
 
 ## HTTP boundary
 
-- CORS is disabled by default and can allow one explicit `CORS_ORIGIN`.
+- CORS is disabled by default and can allow one exact `CORS_ORIGIN` for stateless browser API access; cookie-backed dashboard sessions remain same-origin.
 - The judge dashboard and API are served same-origin.
 - Replay mutation endpoints use isolated opaque sessions and same-origin write checks, but do not authenticate a person.
 - Session state is bounded to 32 idle-expiring agents; each in-memory audit log fails closed at 2,000 records.
+- Anonymous replay agents force outbound Telegram delivery off even if an operator accidentally enables the feature globally.
 - Dashboard responses receive CSP, frame, MIME-sniffing, referrer, and permissions headers. The deployment profile enables Secure cookies and HSTS.
 - Fastify request/response schemas document the HTTP contract.
 - Graceful SIGINT/SIGTERM handling closes the scheduler and server.

@@ -2,7 +2,7 @@
 
 ## Current status
 
-The application is deployment-ready as a replay-mode container, but no public deployment has been created because platform authorization and account access are external actions. Submission URLs therefore remain `TBD after deployment authorization`.
+The replay-mode container is publicly deployed at <https://txline-sentinel.onrender.com>. The dashboard, `/health`, `/ready`, `/docs`, session-isolated replay controls, signal generation, and paper-position opening were verified over HTTPS on July 11, 2026.
 
 Live TxLINE deployment is not ready and must not be enabled merely to obtain a public URL.
 
@@ -51,16 +51,17 @@ The process must remain writable only to its own runtime needs. Do not copy `.en
 
 ## Render blueprint
 
-`render.yaml` defines a Docker web service named `txline-sentinel` on the free plan, with `/health` as its health check. It pins judge-safe runtime values for replay mode, disables Telegram, and enables deploys only after checks pass.
+`render.yaml` defines the deployed Docker web service named `txline-sentinel` on the free plan, with `/health` as its health check. It pins judge-safe runtime values for replay mode, disables Telegram, and enables deploys only after checks pass.
 
-Creating or linking the Render service is an external account action and has not been performed. After deployment authorization:
+Current public endpoints:
 
-1. create a new Blueprint from this repository;
-2. verify that the selected branch is `main` and the service is public;
-3. do not add TxLINE or Telegram secrets for the replay judge deployment;
-4. wait for the Docker build and `/health` check;
-5. run the dashboard judge flow on the assigned HTTPS URL;
-6. place that URL and its `/api` base in `SUBMISSION.md`.
+- Dashboard: <https://txline-sentinel.onrender.com>
+- Health: <https://txline-sentinel.onrender.com/health>
+- Readiness: <https://txline-sentinel.onrender.com/ready>
+- OpenAPI UI: <https://txline-sentinel.onrender.com/docs>
+- OpenAPI JSON: <https://txline-sentinel.onrender.com/docs/json>
+
+The judge deployment contains no TxLINE or Telegram secrets. Keep the selected branch at `main`, the service public, and the replica count at one.
 
 ## Release checklist
 
@@ -68,12 +69,12 @@ Creating or linking the Render service is an external account action and has not
 2. Review `npm audit` without force-fixing.
 3. Scan Git history and the Docker context for secrets.
 4. Build and smoke-test the image locally.
-5. Deploy one replay-mode replica after authorization.
+5. Verify the deployed replay-mode replica and its `/health` check.
 6. Verify dashboard, `/health`, `/ready`, `/docs`, replay reset/advance, settlement, and signal detail over HTTPS.
-7. Record the deployment and API URLs in README and `SUBMISSION.md`.
+7. Keep the deployment and API URLs current in README and `SUBMISSION.md`.
 8. Keep a tested local Docker demo as the backup flow.
 
-CI is defined in `.github/workflows/ci.yml` and covers install, formatting, lint, typecheck, unit/integration tests, dependency audit, production build, Chromium installation, and E2E.
+CI is defined in `.github/workflows/ci.yml` and covers install, formatting, lint, typecheck, unit/integration tests, dependency audit, production build, Chromium installation, E2E, and a dependent production-image build plus container health/API smoke test.
 
 ## Production extensions
 

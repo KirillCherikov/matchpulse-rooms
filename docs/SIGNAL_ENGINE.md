@@ -76,9 +76,12 @@ The Rule-based confidence score:
 
 ## Counterfactual evaluation
 
-At the first snapshot at or beyond 30, 60, and 300 seconds, the evaluator computes:
+For each 30, 60, and 300-second horizon, the evaluator accepts the first snapshot whose source-time elapsed value and received-time availability elapsed value both fall between the target and the configured maximum-lag boundary. It then computes:
 
 ```text
+sourceElapsed = snapshot.sourceTimestamp - signal.sourceTimestamp
+availabilityElapsed = snapshot.receivedTimestamp - signal.sourceTimestamp
+observationLag = availabilityElapsed - horizon
 retainedMovement = observedProbability - probabilityBeforeSignal
 retainedMovementRatio = retainedMovement / initialSignalMovement
 ```
@@ -89,11 +92,11 @@ Default classification:
 - `reversed` when retained ratio is at most `0.00`, meaning the initial move has been fully lost or crossed;
 - `inconclusive` between those thresholds.
 
-A small retracement therefore remains `persisted` when at least 60% of the initial movement remains. Each point records observation time, normalized probability, post-signal change, retained ratio, and observation lag. A horizon is populated only when the first eligible snapshot arrives no more than 30 seconds after its target; a much later snapshot does not backfill a missed short horizon.
+A small retracement therefore remains `persisted` when at least 60% of the initial movement remains. Each point records the snapshot's received timestamp as `observedAt`, normalized probability, post-signal change, retained ratio, and received-availability lag after the horizon. A horizon is populated only when both source progression and received availability are no more than 30 seconds after its target; a materially delayed snapshot does not backfill a missed short horizon.
 
-When a confirmed event is already available to the decision, the decision snapshot records the confirmation entry and its availability delay. An unexplained signal leaves confirmation entry unavailable instead of relabeling an arbitrary later price. At terminal settlement, unit returns for immediate and confirmation entries are compared as `immediate`, `confirmation`, `equal`, or `unavailable`. The 60-second point supplies the aggregate movement assessment and signal-persistence metric.
+The signal snapshot records the immediate entry. The first eligible 30-second horizon snapshot records the confirmation entry; `confirmationDelaySeconds` is its received timestamp minus the signal's received timestamp. If that observation is unavailable or too late, confirmation entry remains unavailable. At terminal settlement, unit returns for immediate and confirmation entries are compared as `immediate`, `confirmation`, `equal`, or `unavailable`. The 60-second point supplies the aggregate movement assessment and signal-persistence metric.
 
-The evaluator does not interpolate between snapshots; eligible sparse observations can have a positive `observationLagSeconds`, bounded by the configured maximum lag.
+The evaluator does not interpolate between snapshots. `observationLagSeconds` is the received-availability elapsed value minus the target horizon and is bounded by the configured maximum lag.
 
 ## Explainability
 

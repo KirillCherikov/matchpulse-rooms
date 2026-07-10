@@ -1,6 +1,6 @@
 # TxLINE Sentinel
 
-> Explainable real-time sports market intelligence powered by TxLINE.
+> Explainable real-time sports market intelligence designed for TxLINE.
 
 TxLINE Sentinel is a backend-first operations agent that turns football odds, scores, and match events into normalized market movements, causal event associations, data-quality alerts, reproducible signals, and simulation-only paper outcomes.
 
@@ -19,7 +19,7 @@ TxLINE Sentinel validates transport-independent inputs, separates book percentag
 ## Key differentiators
 
 - Causal event correlation without future-data access or absolute-timestamp matching.
-- Separate operational alerts for stale, delayed, duplicate, out-of-order, gap, divergence, invalid-timestamp, and recovery conditions.
+- Separate operational alerts for stale, delayed, duplicate, out-of-order, gap, divergence, invalid-timestamp, rejected terminal events, and recovery conditions.
 - A transparent **Rule-based confidence score**, including its component contributions and data-quality penalties; it is not a calibrated probability.
 - Counterfactual observations at 30 seconds, 60 seconds, and five minutes using retained-movement ratios instead of treating every retracement as a reversal.
 - Risk-capped paper simulation with win, loss, draw-selection, void, virtual P&L, settled-equity drawdown, and idempotent settlement semantics.
@@ -29,7 +29,7 @@ TxLINE Sentinel validates transport-independent inputs, separates book percentag
 ## Architecture
 
 ```text
-Replay / Mock / verified official live transport
+Replay / Mock / future verified official live transport
                        |
                  Zod validation
                        |
@@ -73,24 +73,31 @@ npm start
 
 Open `http://localhost:3000`; OpenAPI UI is at `http://localhost:3000/docs` and the machine-readable document is at `http://localhost:3000/docs/json`.
 
+Public replay deployment:
+
+- Dashboard: <https://txline-sentinel.onrender.com>
+- OpenAPI: <https://txline-sentinel.onrender.com/docs>
+- Health: <https://txline-sentinel.onrender.com/health>
+
 ## Environment variables
 
 Copy `.env.example` to `.env.local` only when local overrides are needed. Never commit `.env.local`.
 
-| Variable                 | Default or status                        | Purpose                                                                               |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------- |
-| `SENTINEL_MODE`          | `replay`                                 | `replay`, `mock`, or `live` provider selection.                                       |
-| `PORT`                   | `3000`                                   | Unified server port.                                                                  |
-| `HOST`                   | `0.0.0.0`                                | Listen address.                                                                       |
-| `LOG_LEVEL`              | `info`                                   | Fastify structured-log level.                                                         |
-| `CORS_ORIGIN`            | unset                                    | Optional single allowed cross-origin URL; cross-origin access is disabled when unset. |
-| `TXLINE_NETWORK`         | `devnet`                                 | Future verified live network selection.                                               |
-| `TXLINE_API_ORIGIN`      | official devnet origin in `.env.example` | Origin only; the current live adapter makes no network call.                          |
-| `TXLINE_GUEST_JWT`       | unset                                    | Optional runtime secret; replay does not need it.                                     |
-| `TXLINE_API_TOKEN`       | unset                                    | Optional runtime secret; replay does not need it.                                     |
-| `TELEGRAM_ENABLED`       | `false`                                  | Enables outbound notifications only when both Telegram secrets are also present.      |
-| `TELEGRAM_BOT_TOKEN`     | unset                                    | Runtime-only Telegram secret.                                                         |
-| `TELEGRAM_ALERT_CHAT_ID` | unset                                    | Outbound alert destination.                                                           |
+| Variable                 | Default or status                        | Purpose                                                                                                      |
+| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `SENTINEL_MODE`          | `replay`                                 | `replay`, `mock`, or `live` provider selection.                                                              |
+| `PORT`                   | `3000`                                   | Unified server port.                                                                                         |
+| `HOST`                   | `0.0.0.0`                                | Listen address.                                                                                              |
+| `LOG_LEVEL`              | `info`                                   | Fastify structured-log level.                                                                                |
+| `CORS_ORIGIN`            | unset                                    | Optional exact origin for stateless browser API access; the stateful dashboard remains same-origin.          |
+| `SESSION_COOKIE_SECURE`  | `false`                                  | Add the `Secure` flag to replay-session cookies; enabled by the HTTPS deployment profile.                    |
+| `TXLINE_NETWORK`         | `devnet`                                 | Future verified live network selection.                                                                      |
+| `TXLINE_API_ORIGIN`      | official devnet origin in `.env.example` | Origin only; the current live adapter makes no network call.                                                 |
+| `TXLINE_GUEST_JWT`       | unset                                    | Optional runtime secret; replay does not need it.                                                            |
+| `TXLINE_API_TOKEN`       | unset                                    | Optional runtime secret; replay does not need it.                                                            |
+| `TELEGRAM_ENABLED`       | `false`                                  | Enables outbound notifications only for trusted fixed/live runtimes; anonymous replay sessions force it off. |
+| `TELEGRAM_BOT_TOKEN`     | unset                                    | Runtime-only Telegram secret.                                                                                |
+| `TELEGRAM_ALERT_CHAT_ID` | unset                                    | Outbound alert destination.                                                                                  |
 
 ## Odds terminology
 
@@ -148,11 +155,11 @@ npm run cli -- telegram preview /status
 
 ## Dashboard
 
-The dark operations dashboard shows mode and replay state, fixture and score, current per-feed health, latest latency and movement, latest confirmed match event, Rule-based confidence score, explanation, operational alerts, virtual positions, virtual P&L, signal precision, drawdown, replay controls, and the audit timeline. A signal detail screen exposes causal relationship and counterfactual evidence.
+The dark operations dashboard shows mode and replay state, fixture and score, current per-feed health, latest latency and movement, latest confirmed match event, Rule-based confidence score, explanation, operational alerts, virtual positions, virtual P&L, signal precision, drawdown, replay controls, and the audit timeline. A signal detail screen exposes causal relationship, signed score contributions, strategy configuration version, and counterfactual evidence.
 
 ## Telegram
 
-Telegram is disabled by default. When explicitly enabled with runtime secrets, the current integration can send outbound notifications for scores above the configured notification threshold, critical operational alerts, and feed recovery. It also contains deterministic renderers for `/status`, `/signals`, `/alerts`, `/fixture`, and `/positions`, exposed locally through `telegram preview`.
+Telegram is disabled by default. When explicitly enabled with runtime secrets in a trusted fixed/live runtime, the current integration can send outbound notifications for scores above the configured notification threshold, critical operational alerts, and feed recovery. Anonymous replay HTTP sessions always force outbound delivery off, including on the public judge deployment. The integration also contains deterministic renderers for `/status`, `/signals`, `/alerts`, `/fixture`, and `/positions`, exposed locally through `telegram preview`.
 
 There is currently no Telegram webhook or `getUpdates` receiver, so those command renderers are not yet an interactive deployed bot. No Telegram token is committed or printed.
 
@@ -166,7 +173,7 @@ Official references:
 
 - <https://txline.txodds.com/documentation/quickstart>
 - <https://txline.txodds.com/documentation/worldcup>
-- <https://txline.txodds.com/llms.txt>
+- <https://txline.txodds.com/llms.txt> — documented machine index, currently returning HTTP 404
 
 ## Quality checks
 
@@ -177,12 +184,15 @@ npm run typecheck
 npm test
 npm run test:integration
 npm run build
-npx playwright install chromium
+# Minimal Linux/CI hosts; may require permission to install system packages.
+npx playwright install --with-deps chromium
 npm run test:e2e
 npm audit
 ```
 
-The audited release checkpoint passes 57 unit/integration tests, 12 dedicated integration tests, the Chromium judge flow, production build, Docker build/smoke, and `npm audit` with zero known vulnerabilities. Do not use `npm audit fix --force`; review advisories for reachability and runtime relevance.
+If the required Linux browser libraries are already installed, `npx playwright install chromium` is sufficient.
+
+The audited release checkpoint passes 82 unit/integration tests, 26 dedicated integration tests, the Chromium judge flow, production build, Docker build/smoke, and `npm audit` with zero known vulnerabilities. Do not use `npm audit fix --force`; review advisories for reachability and runtime relevance.
 
 ## Deployment
 
@@ -191,9 +201,9 @@ docker build -t txline-sentinel .
 docker run --rm -p 3000:3000 --env SENTINEL_MODE=replay txline-sentinel
 ```
 
-The image runs as a non-root user and includes a `/health` check. Public deployment has not been performed because platform authorization is still required. Until durable session coordination is implemented, deploy a single replica for the judge replay. See [Deployment](docs/DEPLOYMENT.md), [Judge guide](docs/JUDGE_GUIDE.md), and [Demo script](docs/DEMO_SCRIPT.md).
+The image runs as a non-root user and includes a `/health` check. The replay build is deployed at <https://txline-sentinel.onrender.com>. Until durable session coordination is implemented, keep the judge deployment at one replica. See [Deployment](docs/DEPLOYMENT.md), [Judge guide](docs/JUDGE_GUIDE.md), and [Demo script](docs/DEMO_SCRIPT.md).
 
-A judge-safe Render Blueprint is provided in `render.yaml`; creating the external service remains pending deployment authorization.
+A judge-safe Render Blueprint is provided in `render.yaml`. The public service runs in replay mode with Telegram disabled and no TxLINE credentials.
 
 ## Honest limitations
 
@@ -202,11 +212,11 @@ A judge-safe Render Blueprint is provided in `render.yaml`; creating the externa
 - State and audit records are in memory and are lost on process restart.
 - Replay sessions are isolated in one process but remain anonymous, memory-only, bounded, and unsuitable for horizontal scaling without shared storage.
 - Replay speed controls event cadence rather than reproducing original inter-arrival delays.
-- Counterfactual horizons use the first snapshot within 30 seconds after each target and do not interpolate or backfill from materially late data.
+- Counterfactual horizons require both source progression and received availability within 30 seconds after each target; they do not interpolate or backfill from materially late data.
 - Signal precision is a 60-second movement-persistence metric, not proof of predictive profitability.
 - The Rule-based confidence score is a deterministic heuristic, not a calibrated probability or guarantee.
 - Telegram supports outbound alerts and local command rendering, but no inbound bot receiver.
-- Public deployment, live credentials, and demo video links remain pending external authorization or production work.
+- Live TxLINE credentials/transport and a demo video remain pending external authorization or production work.
 
 ## Judge walkthrough
 
