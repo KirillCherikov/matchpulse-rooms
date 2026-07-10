@@ -30,8 +30,10 @@ import {
 } from "../providers/synthetic-replay.js";
 import type { ControllableReplayProvider, TxLineProvider } from "../providers/types.js";
 
+const MINIMUM_AUDIT_RESERVE = 64;
+
 export class SentinelAgent {
-  private readonly auditLog = new AppendOnlyAuditLog();
+  private readonly auditLog: AppendOnlyAuditLog;
   private readonly fixturesById = new Map<string, Fixture>();
   private readonly quality: DataQualitySentinel;
   private readonly correlator: EventCorrelator;
@@ -45,13 +47,20 @@ export class SentinelAgent {
   private latestOdds: NormalizedOddsSnapshot | undefined;
   private pendingScoreEvents = new Map<string, MatchEvent>();
   private readonly malformedAlertKeys = new Set<string>();
+  private malformedAlertSequence = 0;
+  private terminalAlertSequence = 0;
   private replayRunSequence = 1;
   private replayRunId = "replay-run-0001";
 
   public constructor(
     public readonly config: SentinelConfig,
-    private readonly provider: TxLineProvider
+    private readonly provider: TxLineProvider,
+    options: { auditEventLimit?: number } = {}
   ) {
+    this.auditLog =
+      options.auditEventLimit === undefined
+        ? new AppendOnlyAuditLog()
+        : new AppendOnlyAuditLog(options.auditEventLimit);
     this.quality = new DataQualitySentinel(config.thresholds);
     this.correlator = new EventCorrelator(config.thresholds.correlationWindowMs);
     this.signalEngine = new SignalEngine(config);
@@ -65,14 +74,17 @@ export class SentinelAgent {
     this.restoreFixtures();
   }
 
-  public static create(config: SentinelConfig = loadConfig()): SentinelAgent {
+  public static create(
+    config: SentinelConfig = loadConfig(),
+    options: { auditEventLimit?: number } = {}
+  ): SentinelAgent {
     const provider =
       config.mode === "live"
         ? new LiveTxLineProvider(Boolean(config.txline.apiToken && config.txline.guestJwt))
         : config.mode === "mock"
           ? new MockTxLineProvider()
           : new ReplayTxLineProvider([createSyntheticFixture()], createSyntheticReplayMessages());
-    return new SentinelAgent(config, provider);
+    return new SentinelAgent(config, provider, options);
   }
 
   public status(): AgentStatus {
@@ -83,9 +95,11 @@ export class SentinelAgent {
     const latestAlert = this.alerts.at(-1);
     const healthTimestamp =
       replay?.simulatedTime ??
-      this.latestOdds?.receivedTimestamp ??
-      this.latestEvent?.receivedTimestamp ??
-      new Date(0).toISOString();
+      (this.provider.mode === "live"
+        ? new Date().toISOString()
+        : (this.latestOdds?.receivedTimestamp ??
+          this.latestEvent?.receivedTimestamp ??
+          new Date(0).toISOString()));
     const feedHealth = fixture
       ? this.quality.feedHealth(fixture.id, healthTimestamp)
       : {
@@ -159,56 +173,74 @@ export class SentinelAgent {
     if (!(this.provider instanceof LiveTxLineProvider)) {
       throw new Error("Live payload ingestion is available only with LiveTxLineProvider");
     }
+    let message: ProviderMessage;
     try {
-      const message = this.provider.ingest(rawPayload);
-      this.process(message);
-      return message;
+      message = this.provider.validate(rawPayload);
     } catch (error) {
-      const timestamp = new Date().toISOString();
-      const rawRecord =
-        typeof rawPayload === "object" && rawPayload !== null
-          ? (rawPayload as Record<string, unknown>)
-          : undefined;
-      const feed = rawRecord?.kind === "score" ? "score" : "odds";
-      const fixtureId =
-        typeof rawRecord?.fixtureId === "string" &&
-        /^[A-Za-z0-9._:-]{1,128}$/.test(rawRecord.fixtureId)
-          ? rawRecord.fixtureId
-          : "unknown";
-      const suppressionKey = `${fixtureId}:${feed}`;
-      if (this.malformedAlertKeys.has(suppressionKey)) return undefined;
-      this.malformedAlertKeys.add(suppressionKey);
-      while (this.malformedAlertKeys.size > 100) {
-        const oldest = this.malformedAlertKeys.values().next().value;
-        if (oldest === undefined) break;
-        this.malformedAlertKeys.delete(oldest);
-      }
-      const alert: OperationalAlert = {
-        id: "alert-malformed-live-payload",
-        type: "malformed_payload",
-        severity: "critical",
-        fixtureId,
-        feed,
-        timestamp,
-        message: "A live provider payload failed schema validation and was not processed.",
-        correlationId: `quality:${fixtureId}:${feed}:malformed`,
-        metadata: {
-          validationError: error instanceof Error ? error.name : "UnknownError"
-        }
-      };
-      this.recordAlerts([alert]);
-      this.auditLog.append("error", timestamp, this.scopeIdentifier(alert.correlationId), {
-        reason: "live_payload_validation_failed",
-        fixtureId,
-        feed
-      });
-      return undefined;
+      return this.recordMalformedLivePayload(rawPayload, error);
     }
+    this.assertAuditCapacity(this.auditCapacityRequiredForNextMessage());
+    this.process(message);
+    this.provider.retain(message);
+    return message;
   }
 
-  public startReplay(speed?: ReplayState["speed"]): ReplayState {
-    this.assertAuditCapacity(4);
+  private recordMalformedLivePayload(rawPayload: unknown, error: unknown): undefined {
+    const timestamp = new Date().toISOString();
+    const rawRecord =
+      typeof rawPayload === "object" && rawPayload !== null
+        ? (rawPayload as Record<string, unknown>)
+        : undefined;
+    const feed = rawRecord?.kind === "score" ? "score" : "odds";
+    const fixtureId =
+      typeof rawRecord?.fixtureId === "string" &&
+      /^[A-Za-z0-9._:-]{1,128}$/.test(rawRecord.fixtureId)
+        ? rawRecord.fixtureId
+        : "unknown";
+    const suppressionKey = `${fixtureId}:${feed}`;
+    if (this.malformedAlertKeys.has(suppressionKey)) return undefined;
+
+    this.assertAuditCapacity(2);
+    this.malformedAlertKeys.add(suppressionKey);
+    while (this.malformedAlertKeys.size > 100) {
+      const oldest = this.malformedAlertKeys.values().next().value;
+      if (oldest === undefined) break;
+      this.malformedAlertKeys.delete(oldest);
+    }
+    this.malformedAlertSequence += 1;
+    const alert: OperationalAlert = {
+      id: `alert-malformed-live-${String(this.malformedAlertSequence).padStart(4, "0")}`,
+      type: "malformed_payload",
+      severity: "critical",
+      fixtureId,
+      feed,
+      timestamp,
+      message: "A live provider payload failed schema validation and was not processed.",
+      correlationId: `quality:${fixtureId}:${feed}:malformed:${this.malformedAlertSequence}`,
+      metadata: {
+        validationError: error instanceof Error ? error.name : "UnknownError"
+      }
+    };
+    this.recordAlerts([alert]);
+    this.auditLog.append("error", timestamp, this.scopeIdentifier(alert.correlationId), {
+      reason: "live_payload_validation_failed",
+      fixtureId,
+      feed
+    });
+    return undefined;
+  }
+
+  public startReplay(
+    speed?: ReplayState["speed"],
+    options: { reserveNextAdvance?: boolean } = {}
+  ): ReplayState {
     const replay = this.requireReplayProvider();
+    const controlEvents = replay.getReplayState().status === "finished" ? 2 : 1;
+    this.assertAuditCapacity(
+      options.reserveNextAdvance
+        ? controlEvents + this.auditCapacityRequiredForNextMessage()
+        : Math.max(4, controlEvents)
+    );
     if (replay.getReplayState().status === "finished") {
       this.auditLog.append(
         "replay_control",
@@ -236,9 +268,20 @@ export class SentinelAgent {
     return state;
   }
 
-  public resumeReplay(speed?: ReplayState["speed"]): ReplayState {
-    this.assertAuditCapacity(1);
+  public resumeReplay(
+    speed?: ReplayState["speed"],
+    options: { reserveNextAdvance?: boolean } = {}
+  ): ReplayState {
     const replay = this.requireReplayProvider();
+    const currentStatus = replay.getReplayState().status;
+    if (currentStatus === "finished") {
+      throw new Error("A finished replay cannot be resumed; start a new replay run instead.");
+    }
+    const willRun =
+      currentStatus === "idle" || currentStatus === "paused" || currentStatus === "running";
+    this.assertAuditCapacity(
+      options.reserveNextAdvance && willRun ? this.auditCapacityRequiredForNextMessage() + 1 : 1
+    );
     const resumed = replay.resume();
     const state = speed !== undefined && resumed.speed !== speed ? replay.start(speed) : resumed;
     this.auditLog.append("replay_control", this.controlTimestamp(), "replay:resume", {
@@ -263,7 +306,7 @@ export class SentinelAgent {
   }
 
   public advanceReplay(manual = false): ProviderMessage | undefined {
-    this.assertAuditCapacity(64);
+    this.assertAuditCapacity(this.auditCapacityRequiredForNextMessage());
     const replay = this.requireReplayProvider();
     if (manual) replay.pause();
     const message = replay.advance();
@@ -272,6 +315,23 @@ export class SentinelAgent {
     }
     this.process(message);
     return message;
+  }
+
+  public handleReplaySchedulerFailure(error: unknown): void {
+    const replay = this.replayProvider();
+    if (!replay) return;
+    replay.pause();
+    if (this.auditLog.remainingCapacity() < 1) return;
+    this.auditLog.append(
+      "error",
+      this.controlTimestamp(),
+      this.scopeIdentifier("replay:scheduler"),
+      {
+        reason: "replay_scheduler_failure",
+        errorName: error instanceof Error ? error.name : "UnknownError",
+        message: error instanceof Error ? error.message : "Unknown replay scheduler error"
+      }
+    );
   }
 
   private process(message: ProviderMessage): void {
@@ -290,6 +350,15 @@ export class SentinelAgent {
       });
       return;
     }
+    const fixture = this.fixturesById.get(message.fixtureId);
+    if (fixture && this.isTerminalFixture(fixture)) {
+      if (message.kind === "score") {
+        this.processMatchEvent(message);
+      } else {
+        this.recordIgnoredTerminalOdds(fixture, message);
+      }
+      return;
+    }
     const preflightAlerts = [
       ...this.quality.checkStaleness(message.receivedTimestamp),
       ...this.checkScoreEventDivergence(message.receivedTimestamp)
@@ -305,11 +374,17 @@ export class SentinelAgent {
       this.processMatchEvent(message);
       return;
     }
-    this.processOdds(message, [...preflightAlerts, ...inspection.alerts]);
+    this.processOdds(
+      message,
+      [...preflightAlerts, ...inspection.alerts].filter(
+        (alert) => alert.fixtureId === message.fixtureId
+      )
+    );
   }
 
   private processMatchEvent(event: MatchEvent): void {
-    this.latestEvent = structuredClone(event);
+    const fixture = this.fixturesById.get(event.fixtureId);
+    const terminalFixture = fixture !== undefined && this.isTerminalFixture(fixture);
     this.auditLog.append(
       "normalized_input",
       event.receivedTimestamp,
@@ -319,21 +394,81 @@ export class SentinelAgent {
         eventType: event.type,
         minute: event.minute,
         confirmed: event.confirmed,
-        authoritative: event.confirmed
+        authoritative: event.confirmed && !terminalFixture
       }
     );
+    if (fixture && terminalFixture) {
+      if (event.confirmed) {
+        this.recordRejectedTerminalEvent(fixture, event);
+      }
+      return;
+    }
+    this.latestEvent = structuredClone(event);
     if (!event.confirmed) return;
     this.latestConfirmedEvent = structuredClone(event);
     this.updateFixtureForEvent(event);
     this.correlator.record(event);
     if (["goal", "red_card", "penalty", "var"].includes(event.type)) {
-      this.pendingScoreEvents.set(event.id, event);
+      this.pendingScoreEvents.set(this.pendingEventKey(event), event);
     }
     if (event.type === "full_time" && event.score) {
       this.settleFixture(event.fixtureId, event.score, event.receivedTimestamp);
     } else if (event.type === "cancelled" || event.type === "postponed") {
       this.settlePositions(event.fixtureId, "void", event.receivedTimestamp);
     }
+  }
+
+  private recordIgnoredTerminalOdds(
+    fixture: Fixture,
+    message: Extract<ProviderMessage, { kind: "odds" }>
+  ): void {
+    const snapshot = normalizeOddsUpdate(message);
+    this.auditLog.append(
+      "normalized_input",
+      snapshot.receivedTimestamp,
+      this.inputCorrelationId(snapshot.id),
+      {
+        fixtureId: snapshot.fixtureId,
+        market: snapshot.market,
+        bookPercentage: snapshot.bookPercentage,
+        overround: snapshot.overround,
+        sourceTimestamp: snapshot.sourceTimestamp,
+        authoritative: false,
+        ignoredReason: "fixture_terminal",
+        terminalStatus: fixture.status
+      }
+    );
+  }
+
+  private recordRejectedTerminalEvent(fixture: Fixture, event: MatchEvent): void {
+    this.terminalAlertSequence += 1;
+    const sameTerminalState =
+      (fixture.status === "finished" &&
+        event.type === "full_time" &&
+        event.score?.home === fixture.score.home &&
+        event.score.away === fixture.score.away) ||
+      (fixture.status === "cancelled" &&
+        (event.type === "cancelled" || event.type === "postponed"));
+    this.recordAlerts([
+      {
+        id: `alert-terminal-${String(this.terminalAlertSequence).padStart(4, "0")}`,
+        type: "terminal_event_rejected",
+        severity: sameTerminalState ? "warning" : "critical",
+        fixtureId: fixture.id,
+        feed: "score",
+        timestamp: event.receivedTimestamp,
+        message: sameTerminalState
+          ? "A repeated confirmed event was ignored because the fixture is already terminal."
+          : "A conflicting confirmed event was ignored because the fixture is already terminal.",
+        correlationId: `terminal:${fixture.id}:${event.id}:${this.terminalAlertSequence}`,
+        metadata: {
+          eventId: event.id,
+          attemptedType: event.type,
+          currentStatus: fixture.status,
+          classification: sameTerminalState ? "duplicate" : "conflict"
+        }
+      }
+    ]);
   }
 
   private processOdds(
@@ -375,7 +510,7 @@ export class SentinelAgent {
       );
       return;
     }
-    const correlatedEvent = this.correlator.correlate(
+    const correlatedEvents = this.correlator.correlations(
       snapshot.fixtureId,
       snapshot.sourceTimestamp,
       snapshot.receivedTimestamp
@@ -394,7 +529,7 @@ export class SentinelAgent {
     );
     let signal = this.signalEngine.process(snapshot, {
       fixture,
-      ...(correlatedEvent ? { correlatedEvent } : {}),
+      ...(correlatedEvents.length > 0 ? { correlatedEvents } : {}),
       alerts,
       activeCriticalFeed: this.quality.hasStaleFeed(snapshot.fixtureId)
     });
@@ -407,8 +542,9 @@ export class SentinelAgent {
       correlationId: this.inputCorrelationId(snapshot.id)
     };
     const eventConsistent = signal.triggeredRules.includes("event_consistent_movement");
-    if (eventConsistent && correlatedEvent) {
-      this.pendingScoreEvents.delete(correlatedEvent.event.id);
+    const correlatedEvent = signal.correlatedEvent;
+    if (eventConsistent && correlatedEvent?.relationship === "post_event_reaction") {
+      this.pendingScoreEvents.delete(this.pendingEventKey(correlatedEvent.event));
     }
     if (!correlatedEvent || !eventConsistent) {
       const divergence: OperationalAlert = {
@@ -574,19 +710,19 @@ export class SentinelAgent {
   private checkScoreEventDivergence(now: string): OperationalAlert[] {
     const nowMs = new Date(now).getTime();
     const alerts: OperationalAlert[] = [];
-    for (const [eventId, event] of this.pendingScoreEvents.entries()) {
+    for (const [pendingKey, event] of this.pendingScoreEvents.entries()) {
       const ageMs = nowMs - new Date(event.receivedTimestamp).getTime();
       if (ageMs > this.config.thresholds.correlationWindowMs) {
-        this.pendingScoreEvents.delete(eventId);
+        this.pendingScoreEvents.delete(pendingKey);
         alerts.push({
-          id: `alert-divergence-${eventId}`,
+          id: `alert-divergence-${event.fixtureId}-${event.id}`,
           type: "odds_score_divergence",
           severity: "warning",
           fixtureId: event.fixtureId,
           feed: "score",
           timestamp: now,
           message: `Confirmed ${event.type} at ${event.minute}' had no correlated odds movement in the configured window.`,
-          correlationId: `event:${event.id}`,
+          correlationId: `event:${event.fixtureId}:${event.id}`,
           metadata: {
             eventId: event.id,
             ageMs,
@@ -605,12 +741,6 @@ export class SentinelAgent {
         id: this.scopeIdentifier(originalAlert.id),
         correlationId: this.scopeIdentifier(originalAlert.correlationId)
       };
-      this.alerts.push(alert);
-      if (alert.type === "feed_recovery") {
-        void this.telegram.notifyRecovery(alert);
-      } else {
-        void this.telegram.notifyOperationalAlert(alert);
-      }
       this.auditLog.append(
         alert.type === "feed_recovery" ? "recovery" : "operational_alert",
         alert.timestamp,
@@ -622,6 +752,12 @@ export class SentinelAgent {
           metadata: alert.metadata
         }
       );
+      this.alerts.push(alert);
+      if (alert.type === "feed_recovery") {
+        void this.telegram.notifyRecovery(alert);
+      } else {
+        void this.telegram.notifyOperationalAlert(alert);
+      }
     }
   }
 
@@ -637,6 +773,8 @@ export class SentinelAgent {
     this.latestOdds = undefined;
     this.pendingScoreEvents.clear();
     this.malformedAlertKeys.clear();
+    this.malformedAlertSequence = 0;
+    this.terminalAlertSequence = 0;
     this.restoreFixtures();
   }
 
@@ -660,6 +798,14 @@ export class SentinelAgent {
     return `${this.replayRunId}:input:${inputId}`;
   }
 
+  private pendingEventKey(event: Pick<MatchEvent, "fixtureId" | "id">): string {
+    return JSON.stringify([event.fixtureId, event.id]);
+  }
+
+  private isTerminalFixture(fixture: Fixture): boolean {
+    return fixture.status === "finished" || fixture.status === "cancelled";
+  }
+
   private scopeIdentifier(identifier: string): string {
     return identifier.startsWith(`${this.replayRunId}:`)
       ? identifier
@@ -670,6 +816,24 @@ export class SentinelAgent {
     if (this.auditLog.remainingCapacity() < requiredEvents) {
       throw new Error("Audit capacity is too low to process another replay action safely");
     }
+  }
+
+  /**
+   * Reserves a conservative upper bound before any provider cursor or pipeline
+   * state can move. One input can fan out across every tracked stale feed and
+   * every pending score divergence, so a fixed reserve is not safe.
+   */
+  private auditCapacityRequiredForNextMessage(): number {
+    const rawInputEvent = 1;
+    const qualityAndDivergenceEvents =
+      this.quality.maximumAlertsForNextMessage() + this.pendingScoreEvents.size;
+    const scoreBranchEvents =
+      1 + this.paper.allPositions().filter((position) => position.status === "open").length;
+    const oddsBranchEvents = 1 + this.signals.length + 3;
+    return Math.max(
+      MINIMUM_AUDIT_RESERVE,
+      rawInputEvent + qualityAndDivergenceEvents + Math.max(scoreBranchEvents, oddsBranchEvents)
+    );
   }
 
   private restoreFixtures(): void {

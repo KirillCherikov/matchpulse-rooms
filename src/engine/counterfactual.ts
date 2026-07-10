@@ -23,7 +23,11 @@ export function updateCounterfactuals(
       (new Date(snapshot.receivedTimestamp).getTime() -
         new Date(signal.receivedTimestamp).getTime()) /
       1_000;
-    if (elapsedSeconds <= 0 || decisionElapsedSeconds <= 0) {
+    const observedElapsedSeconds =
+      (new Date(snapshot.receivedTimestamp).getTime() -
+        new Date(signal.sourceTimestamp).getTime()) /
+      1_000;
+    if (elapsedSeconds <= 0 || decisionElapsedSeconds <= 0 || observedElapsedSeconds <= 0) {
       return signal;
     }
     const current = selectionFor(snapshot, signal.selection);
@@ -45,25 +49,34 @@ export function updateCounterfactuals(
       (horizonSeconds) =>
         elapsedSeconds >= horizonSeconds &&
         elapsedSeconds - horizonSeconds <= thresholds.maxObservationLagSeconds &&
+        observedElapsedSeconds >= horizonSeconds &&
+        observedElapsedSeconds - horizonSeconds <= thresholds.maxObservationLagSeconds &&
         !existing.some((point) => point.horizonSeconds === horizonSeconds)
     ).map((horizonSeconds) => ({
       horizonSeconds,
-      observedAt: snapshot.sourceTimestamp,
+      observedAt: snapshot.receivedTimestamp,
       normalizedProbability: current.normalizedProbability,
       probabilityChangeAfterSignal,
       retainedMovementRatio,
-      observationLagSeconds: elapsedSeconds - horizonSeconds,
+      observationLagSeconds: observedElapsedSeconds - horizonSeconds,
       classification
     }));
     if (newPoints.length === 0) {
       return signal;
     }
+    const thirtySecondPoint = newPoints.find((point) => point.horizonSeconds === 30);
     const sixtySecondPoint = newPoints.find((point) => point.horizonSeconds === 60);
     return {
       ...signal,
       counterfactual: {
         ...signal.counterfactual,
         horizons: [...existing, ...newPoints],
+        ...(thirtySecondPoint && signal.counterfactual.confirmationEntryOdds === undefined
+          ? {
+              confirmationEntryOdds: current.decimalOdds,
+              confirmationDelaySeconds: decisionElapsedSeconds
+            }
+          : {}),
         ...(sixtySecondPoint ? { movementAssessment: sixtySecondPoint.classification } : {})
       }
     };

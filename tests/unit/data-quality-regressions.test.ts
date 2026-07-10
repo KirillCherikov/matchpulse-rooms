@@ -141,6 +141,18 @@ describe("data-quality sentinel regression coverage", () => {
     expect(quality.inspect(odds("first", 1, 0)).alerts).toHaveLength(1);
   });
 
+  it("derives stale feed health from the requested clock even before an alerting tick", () => {
+    const quality = sentinel();
+    expect(quality.inspect(odds("odds", 1, 0)).shouldProcess).toBe(true);
+    expect(quality.inspect(score("score", 1, 0)).shouldProcess).toBe(true);
+
+    expect(quality.feedHealth("fixture-001", timestamp(20))).toMatchObject({
+      status: "degraded",
+      odds: { status: "stale", ageMs: 20_000 },
+      score: { status: "stale", ageMs: 20_000 }
+    });
+  });
+
   it("bounds remembered update IDs per feed", () => {
     const quality = sentinel(2);
     expect(quality.inspect(odds("id-1", 1, 0)).shouldProcess).toBe(true);

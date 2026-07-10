@@ -1,8 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { SentinelAgent } from "../../src/application/sentinel-agent.js";
 import { loadConfig } from "../../src/config.js";
 import { LiveTxLineProvider } from "../../src/providers/live.js";
-import { oddsUpdate } from "../helpers.js";
+import { fixture, matchEvent, oddsUpdate, timestamp } from "../helpers.js";
 
 describe("live provider safety boundary", () => {
   it("fails readiness closed until the documented transport is configured", () => {
@@ -60,5 +60,69 @@ describe("live provider safety boundary", () => {
     agent.ingestLivePayload({ kind: "score", fixtureId: "fixture-live", secret: "do-not-log" });
     expect(agent.allAlerts()).toHaveLength(1);
     expect(agent.exportAudit()).not.toContain("do-not-log");
+
+    agent.ingestLivePayload({ kind: "odds", fixtureId: "fixture-other" });
+    const alerts = agent.allAlerts();
+    expect(new Set(alerts.map((alert) => alert.id)).size).toBe(2);
+    for (const alert of alerts) {
+      expect(
+        agent
+          .audit()
+          .some(
+            (event) =>
+              event.type === "operational_alert" && event.correlationId === alert.correlationId
+          )
+      ).toBe(true);
+    }
+  });
+
+  it("separates validation failure from processing capacity and never leaves an unaudited alert", () => {
+    const provider = new LiveTxLineProvider(true);
+    const config = { ...loadConfig({ SENTINEL_MODE: "live" }), mode: "live" as const };
+    const malformedAgent = new SentinelAgent(config, provider, { auditEventLimit: 1 });
+
+    expect(() => malformedAgent.ingestLivePayload({ kind: "score", fixtureId: "fixture" })).toThrow(
+      /audit capacity/i
+    );
+    expect(malformedAgent.allAlerts()).toEqual([]);
+    expect(malformedAgent.audit()).toEqual([]);
+
+    const capacityProvider = new LiveTxLineProvider(true);
+    const validAgent = new SentinelAgent(config, capacityProvider, {
+      auditEventLimit: 2
+    });
+    expect(() => validAgent.ingestLivePayload(oddsUpdate("valid", 1, 1))).toThrow(
+      /audit capacity/i
+    );
+    expect(validAgent.allAlerts()).toEqual([]);
+    expect(validAgent.audit()).toEqual([]);
+    expect(capacityProvider.receivedMessages()).toEqual([]);
+  });
+
+  it("uses wall-clock time to report silent live fixtures as stale", () => {
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(timestamp(0));
+      const provider = new LiveTxLineProvider(true, 100, [fixture]);
+      const base = loadConfig({ SENTINEL_MODE: "live" });
+      const config = {
+        ...base,
+        mode: "live" as const,
+        thresholds: { ...base.thresholds, staleOddsMs: 10_000, staleScoreMs: 10_000 }
+      };
+      const agent = new SentinelAgent(config, provider);
+      agent.ingestLivePayload(oddsUpdate("live-odds", 1, 0));
+      agent.ingestLivePayload(matchEvent("live-score", 1, 0));
+      expect(agent.status().feedHealth.status).toBe("healthy");
+
+      vi.setSystemTime(timestamp(20));
+      expect(agent.status().feedHealth).toMatchObject({
+        status: "degraded",
+        odds: { status: "stale", ageMs: 20_000 },
+        score: { status: "stale", ageMs: 20_000 }
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

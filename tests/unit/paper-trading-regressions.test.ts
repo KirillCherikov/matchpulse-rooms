@@ -87,6 +87,28 @@ describe("paper trading regression coverage", () => {
     expect(paper.analytics([]).openExposure).toBe(0);
   });
 
+  it("floors stake precision so aggregate exposure never exceeds a fractional-cent cap", () => {
+    const paper = simulator({
+      initialVirtualBankroll: 1,
+      stakeFraction: 0.1,
+      maxExposureFraction: 0.006
+    });
+
+    expect(paper.openForSignal(eligibleSignal())).toBeUndefined();
+    expect(paper.analytics([]).openExposure).toBeLessThanOrEqual(0.006);
+  });
+
+  it("does not expose its mutable stored position through the opening result", () => {
+    const paper = simulator();
+    const opened = paper.openForSignal(eligibleSignal());
+    expect(opened).toBeDefined();
+    if (!opened) return;
+
+    opened.stake = 999;
+    expect(paper.allPositions()[0]?.stake).toBe(10);
+    expect(paper.analytics([]).openExposure).toBe(10);
+  });
+
   it("rejects an out-of-domain entry price before virtual settlement arithmetic", () => {
     const paper = simulator();
 

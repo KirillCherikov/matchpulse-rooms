@@ -30,6 +30,8 @@ export interface QualityInspection {
   shouldProcess: boolean;
 }
 
+const MAX_INSPECTION_ALERTS_PER_MESSAGE = 3;
+
 export class DataQualitySentinel {
   private readonly feeds = new Map<string, FeedState>();
   private readonly reportedIssues = new Set<string>();
@@ -274,6 +276,15 @@ export class DataQualitySentinel {
     return alerts;
   }
 
+  /**
+   * Conservative audit preflight bound for one message: every tracked feed can
+   * become stale, while inspection can emit a sequence gap, delayed update,
+   * and recovery together.
+   */
+  public maximumAlertsForNextMessage(): number {
+    return this.feeds.size + MAX_INSPECTION_ALERTS_PER_MESSAGE;
+  }
+
   public hasStaleFeed(fixtureId: string): boolean {
     return [...this.feeds.values()].some((state) => state.fixtureId === fixtureId && state.stale);
   }
@@ -300,10 +311,13 @@ export class DataQualitySentinel {
     if (!state || state.lastReceivedAt === undefined) {
       return { status: "unknown" };
     }
+    const ageMs = Math.max(0, nowMs - state.lastReceivedAt);
+    const thresholdMs =
+      feed === "odds" ? this.thresholds.staleOddsMs : this.thresholds.staleScoreMs;
     return {
-      status: state.stale ? "stale" : "healthy",
+      status: state.stale || ageMs > thresholdMs ? "stale" : "healthy",
       lastReceivedTimestamp: new Date(state.lastReceivedAt).toISOString(),
-      ageMs: Math.max(0, nowMs - state.lastReceivedAt)
+      ageMs
     };
   }
 

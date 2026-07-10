@@ -142,6 +142,21 @@ describe("replay and simulation lifecycle regressions", () => {
     );
   });
 
+  it("does not let resume with a new speed restart a finished provider without a clean run", () => {
+    const agent = SentinelAgent.create({
+      ...loadConfig({ SENTINEL_MODE: "replay" }),
+      mode: "replay"
+    });
+    run(agent);
+    const terminalState = canonicalState(agent);
+    const auditCount = agent.audit().length;
+
+    expect(() => agent.resumeReplay(2)).toThrow(/finished replay cannot be resumed/i);
+    expect(agent.status().replay).toMatchObject({ status: "finished", cursor: 13, speed: 10 });
+    expect(canonicalState(agent)).toEqual(terminalState);
+    expect(agent.audit()).toHaveLength(auditCount);
+  });
+
   it("reset clears all dynamic engines and restores the fixture and virtual bankroll", () => {
     const agent = SentinelAgent.create({
       ...loadConfig({ SENTINEL_MODE: "replay" }),
@@ -227,6 +242,11 @@ describe("replay and simulation lifecycle regressions", () => {
       event("cancelled", 2, 3, {
         type: "cancelled",
         minute: 43
+      }),
+      event("goal-after-cancellation", 3, 4, {
+        minute: 44,
+        team: "away",
+        score: { home: 1, away: 1 }
       })
     ]);
 
@@ -240,6 +260,19 @@ describe("replay and simulation lifecycle regressions", () => {
       positionOutcome: "void",
       virtualPnl: 0
     });
+    expect(agent.fixtures()[0]).toMatchObject({
+      status: "cancelled",
+      minute: 43,
+      score: { home: 1, away: 0 }
+    });
+    expect(agent.allAlerts()).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          type: "terminal_event_rejected",
+          metadata: expect.objectContaining({ eventId: "goal-after-cancellation" })
+        })
+      ])
+    );
   });
 
   it("does not treat a flat odds heartbeat as a reaction to a confirmed goal", () => {

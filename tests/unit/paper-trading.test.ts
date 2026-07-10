@@ -145,5 +145,35 @@ describe("paper trading simulation", () => {
     );
 
     expect(evaluated.counterfactual.horizons).toEqual([]);
+    expect(evaluated.counterfactual.confirmationEntryOdds).toBeUndefined();
+    expect(evaluated.counterfactual.confirmationDelaySeconds).toBeUndefined();
+  });
+
+  it("does not backfill confirmation from an on-time source observation received too late", () => {
+    const delayedReceipt = {
+      ...fairSnapshot("delayed-receipt", 2, 31, 0.55),
+      receivedTimestamp: timestamp(100)
+    };
+    const evaluated = evaluateCounterfactual(counterfactualSignal(), delayedReceipt);
+
+    expect(evaluated.counterfactual.horizons).toEqual([]);
+    expect(evaluated.counterfactual.confirmationEntryOdds).toBeUndefined();
+    expect(evaluated.counterfactual.confirmationDelaySeconds).toBeUndefined();
+  });
+
+  it("records confirmation entry from the first admissible 30-second observation", () => {
+    const confirmationSnapshot = {
+      ...fairSnapshot("confirmation", 2, 31, 0.55),
+      receivedTimestamp: timestamp(33)
+    };
+    const evaluated = evaluateCounterfactual(counterfactualSignal(), confirmationSnapshot);
+
+    expect(evaluated.counterfactual.confirmationEntryOdds).toBeCloseTo(1 / 0.55);
+    expect(evaluated.counterfactual.confirmationDelaySeconds).toBe(33);
+    expect(evaluated.counterfactual.horizons.map((point) => point.horizonSeconds)).toEqual([30]);
+    expect(evaluated.counterfactual.horizons[0]).toMatchObject({
+      observedAt: timestamp(33),
+      observationLagSeconds: 3
+    });
   });
 });

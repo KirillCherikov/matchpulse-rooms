@@ -26,6 +26,29 @@ function withAwayOdds(update: OddsUpdate, awayOdds: number): OddsUpdate {
   };
 }
 
+function fairOddsUpdate(
+  id: string,
+  sequence: number,
+  seconds: number,
+  probabilities: [number, number, number]
+): OddsUpdate {
+  return {
+    kind: "odds",
+    id,
+    fixtureId: fixture.id,
+    market: "match_winner",
+    sequence,
+    sourceTimestamp: timestamp(seconds),
+    receivedTimestamp: timestamp(seconds),
+    selections: [
+      { selection: "home", decimalOdds: 1 / probabilities[0] },
+      { selection: "draw", decimalOdds: 1 / probabilities[1] },
+      { selection: "away", decimalOdds: 1 / probabilities[2] }
+    ],
+    rawReference: `test://odds/${id}`
+  };
+}
+
 describe("event correlation and signal detection", () => {
   it("correlates only an already available event that precedes the odds source time", () => {
     const correlator = new EventCorrelator(30_000);
@@ -217,6 +240,106 @@ describe("event correlation and signal detection", () => {
 
     expect(signal?.triggeredRules).toContain("late_event_confirmation");
     expect(signal?.triggeredRules).not.toContain("confirmed_match_event");
+    expect(signal?.paperDecision).toBe("not_eligible");
+  });
+
+  it("uses a directionally supporting goal instead of a nearer unsupported event", () => {
+    const engine = new SignalEngine(loadConfig({ SENTINEL_MODE: "replay" }));
+    engine.process(normalizeOddsUpdate(oddsUpdate("opening", 1, 0, 3.2)), {
+      fixture,
+      alerts: []
+    });
+    const goal = postEventGoal(7);
+    const halfTime: CorrelatedEvent = {
+      event: {
+        ...matchEvent("half-time", 2, 9),
+        type: "half_time",
+        minute: 45
+      },
+      relationship: "post_event_reaction",
+      sourceLagMs: 1_000,
+      confirmationLeadMs: 1_000
+    };
+
+    const signal = engine.process(normalizeOddsUpdate(oddsUpdate("shift", 2, 10, 1.7)), {
+      fixture,
+      correlatedEvents: [halfTime, goal],
+      alerts: []
+    });
+
+    expect(signal?.correlatedEvent?.event.id).toBe("goal");
+    expect(signal?.triggeredRules).toContain("event_consistent_movement");
+    expect(signal?.paperDecision).toBe("eligible");
+  });
+
+  it("prefers an available post-event reaction over a nearer late confirmation", () => {
+    const engine = new SignalEngine(loadConfig({ SENTINEL_MODE: "replay" }));
+    engine.process(normalizeOddsUpdate(oddsUpdate("opening", 1, 0, 3.2)), {
+      fixture,
+      alerts: []
+    });
+    const availableGoal = postEventGoal(0);
+    const lateGoal: CorrelatedEvent = {
+      event: {
+        ...matchEvent("nearer-late", 2, 9),
+        receivedTimestamp: timestamp(11)
+      },
+      relationship: "late_event_confirmation",
+      sourceLagMs: 1_000,
+      confirmationLeadMs: 1_000
+    };
+
+    const signal = engine.process(
+      normalizeOddsUpdate({
+        ...oddsUpdate("shift", 2, 10, 1.7),
+        receivedTimestamp: timestamp(12)
+      }),
+      {
+        fixture,
+        correlatedEvents: [lateGoal, availableGoal],
+        alerts: []
+      }
+    );
+
+    expect(signal?.correlatedEvent?.event.id).toBe("goal");
+    expect(signal?.correlatedEvent?.relationship).toBe("post_event_reaction");
+    expect(signal?.triggeredRules).toContain("confirmed_match_event");
+    expect(signal?.triggeredRules).not.toContain("late_event_confirmation");
+    expect(signal?.paperDecision).toBe("eligible");
+  });
+
+  it("prioritizes a material positive supported candidate over a larger negative move", () => {
+    const engine = new SignalEngine(loadConfig({ SENTINEL_MODE: "replay" }));
+    engine.process(normalizeOddsUpdate(fairOddsUpdate("opening", 1, 0, [0.3, 0.3, 0.4])), {
+      fixture,
+      alerts: []
+    });
+
+    const signal = engine.process(
+      normalizeOddsUpdate(fairOddsUpdate("shift", 2, 10, [0.36, 0.34, 0.3])),
+      { fixture, correlatedEvent: postEventGoal(5), alerts: [] }
+    );
+
+    expect(signal?.selection).toBe("home");
+    expect(signal?.movement.probabilityDelta).toBeCloseTo(0.06);
+    expect(signal?.paperDecision).toBe("eligible");
+  });
+
+  it("keeps a supported negative reaction ahead of a larger unsupported move without opening it", () => {
+    const engine = new SignalEngine(loadConfig({ SENTINEL_MODE: "replay" }));
+    engine.process(normalizeOddsUpdate(fairOddsUpdate("opening", 1, 0, [0.3, 0.3, 0.4])), {
+      fixture,
+      alerts: []
+    });
+
+    const signal = engine.process(
+      normalizeOddsUpdate(fairOddsUpdate("shift", 2, 10, [0.22, 0.5, 0.28])),
+      { fixture, correlatedEvent: postEventGoal(5), alerts: [] }
+    );
+
+    expect(signal?.selection).toBe("away");
+    expect(signal?.movement.probabilityDelta).toBeLessThan(0);
+    expect(signal?.triggeredRules).toContain("event_consistent_movement");
     expect(signal?.paperDecision).toBe("not_eligible");
   });
 });

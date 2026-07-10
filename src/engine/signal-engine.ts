@@ -17,6 +17,7 @@ interface SelectionState {
 export interface SignalContext {
   fixture: Fixture;
   correlatedEvent?: CorrelatedEvent;
+  correlatedEvents?: CorrelatedEvent[];
   alerts: OperationalAlert[];
   activeCriticalFeed?: boolean;
 }
@@ -112,7 +113,27 @@ export class SignalEngine {
           this.config.thresholds.absoluteProbabilityMove / 2;
       return hasPrimaryThreshold || hasQualifiedMomentum;
     });
-    const candidate = eligibleCandidates.sort(
+    const correlations =
+      context.correlatedEvents ?? (context.correlatedEvent ? [context.correlatedEvent] : []);
+    const supportedCandidates = eligibleCandidates.filter((candidate) =>
+      correlations.some((correlation) =>
+        this.eventSupportsDirectionalMovement(
+          correlation,
+          candidate.selection,
+          candidate.movement.probabilityDelta
+        )
+      )
+    );
+    const supportedPositiveCandidates = supportedCandidates.filter(
+      (candidate) => candidate.movement.probabilityDelta > 0
+    );
+    const candidatePool =
+      supportedPositiveCandidates.length > 0
+        ? supportedPositiveCandidates
+        : supportedCandidates.length > 0
+          ? supportedCandidates
+          : eligibleCandidates;
+    const candidate = [...candidatePool].sort(
       (left, right) =>
         Math.abs(right.movement.probabilityDelta) - Math.abs(left.movement.probabilityDelta)
     )[0];
@@ -120,20 +141,36 @@ export class SignalEngine {
       return undefined;
     }
 
+    const directionallyConsistentEvents = correlations.filter((correlation) =>
+      this.eventSupportsDirectionalMovement(
+        correlation,
+        candidate.selection,
+        candidate.movement.probabilityDelta
+      )
+    );
+    const directionallyConsistentEvent =
+      directionallyConsistentEvents.find(
+        (correlation) => correlation.relationship === "post_event_reaction"
+      ) ?? directionallyConsistentEvents[0];
+    const correlatedEvent = directionallyConsistentEvent ?? correlations[0];
     const rules = [...candidate.rules];
     const eventConsistent =
-      context.correlatedEvent?.relationship === "post_event_reaction" &&
-      this.eventSupportsLongConfirmation(
-        context.correlatedEvent,
+      correlatedEvent !== undefined &&
+      this.eventSupportsDirectionalMovement(
+        correlatedEvent,
         candidate.selection,
         candidate.movement.probabilityDelta
       );
-    if (context.correlatedEvent) {
+    if (correlatedEvent) {
       rules.push("temporally_associated_event");
-      if (context.correlatedEvent.relationship === "late_event_confirmation") {
+      if (correlatedEvent.relationship === "late_event_confirmation") {
         rules.push("late_event_confirmation");
-      } else if (eventConsistent) {
-        rules.push("confirmed_match_event", "event_consistent_movement");
+      }
+      if (eventConsistent) {
+        rules.push("event_consistent_movement");
+        if (correlatedEvent.relationship === "post_event_reaction") {
+          rules.push("confirmed_match_event");
+        }
       } else {
         rules.push("event_market_divergence");
       }
@@ -152,7 +189,9 @@ export class SignalEngine {
       context.activeCriticalFeed || context.alerts.some((alert) => alert.severity === "critical");
     const paperDecision =
       eventConsistent &&
+      correlatedEvent?.relationship === "post_event_reaction" &&
       candidate.movement.probabilityDelta > 0 &&
+      candidate.selection !== "draw" &&
       context.fixture.status === "live" &&
       confidence.score >= this.config.thresholds.minRuleBasedConfidenceToTrade &&
       !criticalFeedIssue
@@ -178,7 +217,7 @@ export class SignalEngine {
       normalizedProbabilityBefore: candidate.before.normalizedProbability,
       normalizedProbabilityAfter: candidate.after.normalizedProbability,
       movement: candidate.movement,
-      ...(context.correlatedEvent ? { correlatedEvent: context.correlatedEvent } : {}),
+      ...(correlatedEvent ? { correlatedEvent } : {}),
       latencyMs,
       ruleBasedConfidenceScore: confidence.score,
       confidenceComponents: confidence.components,
@@ -193,18 +232,7 @@ export class SignalEngine {
       strategyConfigurationVersion: this.config.strategyConfigurationVersion,
       counterfactual: {
         horizons: [],
-        immediateEntryOdds: candidate.after.decimalOdds,
-        ...(context.correlatedEvent
-          ? {
-              confirmationEntryOdds: candidate.after.decimalOdds,
-              confirmationDelaySeconds: Math.max(
-                0,
-                (new Date(context.correlatedEvent.event.receivedTimestamp).getTime() -
-                  new Date(snapshot.sourceTimestamp).getTime()) /
-                  1_000
-              )
-            }
-          : {})
+        immediateEntryOdds: candidate.after.decimalOdds
       }
     };
   }
@@ -243,15 +271,20 @@ export class SignalEngine {
     };
   }
 
-  private eventSupportsLongConfirmation(
+  private eventSupportsDirectionalMovement(
     correlatedEvent: CorrelatedEvent,
     selection: SelectionKey,
     probabilityDelta: number
   ): boolean {
-    if (probabilityDelta <= 0 || selection === "draw") return false;
+    if (probabilityDelta === 0 || selection === "draw") return false;
     const event = correlatedEvent.event;
-    if (event.type === "goal") return event.team === selection;
-    if (event.type === "red_card" && event.team) return event.team !== selection;
+    if (!event.team) return false;
+    if (event.type === "goal") {
+      return event.team === selection ? probabilityDelta > 0 : probabilityDelta < 0;
+    }
+    if (event.type === "red_card") {
+      return event.team === selection ? probabilityDelta < 0 : probabilityDelta > 0;
+    }
     return false;
   }
 }

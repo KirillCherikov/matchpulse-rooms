@@ -9,18 +9,21 @@ import type { TxLineProvider } from "./types.js";
 export class LiveTxLineProvider implements TxLineProvider {
   public readonly mode = "live" as const;
   private readonly received: ProviderMessage[] = [];
+  private readonly liveFixtures: Fixture[];
 
   public constructor(
     private readonly enabled: boolean,
-    private readonly maxRetainedMessages = 1_000
+    private readonly maxRetainedMessages = 1_000,
+    fixtures: Fixture[] = []
   ) {
     if (!Number.isInteger(maxRetainedMessages) || maxRetainedMessages < 1) {
       throw new Error("Live message retention limit must be a positive integer");
     }
+    this.liveFixtures = structuredClone(fixtures);
   }
 
   public fixtures(): Fixture[] {
-    return [];
+    return structuredClone(this.liveFixtures);
   }
 
   public readiness(): { ready: boolean; reason?: string } {
@@ -30,12 +33,21 @@ export class LiveTxLineProvider implements TxLineProvider {
   }
 
   public ingest(rawPayload: unknown): ProviderMessage {
-    const message = parseProviderMessage(rawPayload);
-    this.received.push(message);
+    const message = this.validate(rawPayload);
+    this.retain(message);
+    return structuredClone(message);
+  }
+
+  public validate(rawPayload: unknown): ProviderMessage {
+    return parseProviderMessage(rawPayload);
+  }
+
+  public retain(message: ProviderMessage): void {
+    const validated = parseProviderMessage(message);
+    this.received.push(validated);
     if (this.received.length > this.maxRetainedMessages) {
       this.received.splice(0, this.received.length - this.maxRetainedMessages);
     }
-    return structuredClone(message);
   }
 
   public receivedMessages(): ProviderMessage[] {

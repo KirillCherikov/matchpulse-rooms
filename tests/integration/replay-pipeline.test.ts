@@ -25,6 +25,12 @@ describe("replay → signal → paper position → settlement → analytics → 
     expect(position?.status).toBe("settled");
     expect(position?.outcome).toBe("won");
     expect(agent.analytics().virtualPnl).toBeGreaterThan(0);
+    expect(signal?.counterfactual).toMatchObject({
+      immediateEntryOdds: 1.78,
+      confirmationEntryOdds: 1.76,
+      confirmationDelaySeconds: 29,
+      betterEntry: "immediate"
+    });
     expect(agent.allAlerts().map((alert) => alert.type)).toEqual(
       expect.arrayContaining([
         "duplicate_update",

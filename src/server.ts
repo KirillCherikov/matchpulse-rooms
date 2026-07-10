@@ -9,7 +9,13 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { SentinelAgent } from "./application/sentinel-agent.js";
-import { errorResponses, registerOpenApiSchemas } from "./api/openapi.js";
+import {
+  errorResponses,
+  registerOpenApiSchemas,
+  REPLAY_SESSION_CAPACITY_CODE,
+  REPLAY_SESSION_CAPACITY_MESSAGE,
+  sessionCapacityErrorResponse
+} from "./api/openapi.js";
 import { loadConfig, type SentinelConfig } from "./config.js";
 import { replayControlSchema } from "./domain/schemas.js";
 
@@ -22,7 +28,10 @@ interface ServerOptions {
 class ReplayScheduler {
   private timer: NodeJS.Timeout | undefined;
 
-  public constructor(private readonly agent: SentinelAgent) {}
+  public constructor(
+    private readonly agent: SentinelAgent,
+    private readonly reportFailure: (error: unknown) => void
+  ) {}
 
   public start(): void {
     this.stop();
@@ -30,7 +39,7 @@ class ReplayScheduler {
     if (!replay || replay.status !== "running") return;
     this.timer = setTimeout(
       () => {
-        void this.tick();
+        this.tick();
       },
       Math.max(100, Math.round(1_000 / replay.speed))
     );
@@ -43,22 +52,37 @@ class ReplayScheduler {
     }
   }
 
-  private async tick(): Promise<void> {
-    const replay = this.agent.status().replay;
-    if (!replay || replay.status !== "running") {
-      return;
+  private tick(): void {
+    this.timer = undefined;
+    try {
+      const replay = this.agent.status().replay;
+      if (!replay || replay.status !== "running") return;
+      this.agent.advanceReplay();
+      const next = this.agent.status().replay;
+      if (!next || next.status !== "running") return;
+      this.timer = setTimeout(
+        () => {
+          this.tick();
+        },
+        Math.max(100, Math.round(1_000 / next.speed))
+      );
+    } catch (error) {
+      this.stop();
+      try {
+        this.agent.handleReplaySchedulerFailure(error);
+      } catch (recordingError) {
+        this.safelyReportFailure(recordingError);
+      }
+      this.safelyReportFailure(error);
     }
-    this.agent.advanceReplay();
-    const next = this.agent.status().replay;
-    if (!next || next.status !== "running") {
-      return;
+  }
+
+  private safelyReportFailure(error: unknown): void {
+    try {
+      this.reportFailure(error);
+    } catch {
+      // A logging failure must never resurrect a failed replay timer.
     }
-    this.timer = setTimeout(
-      () => {
-        void this.tick();
-      },
-      Math.max(100, Math.round(1_000 / next.speed))
-    );
   }
 }
 
@@ -73,13 +97,24 @@ const SESSION_COOKIE = "txline_sentinel_session";
 const MAX_REPLAY_SESSIONS = 32;
 const SESSION_TTL_MS = 30 * 60 * 1_000;
 
+class ReplaySessionCapacityError extends Error {
+  public readonly statusCode = 503;
+  public readonly code = REPLAY_SESSION_CAPACITY_CODE;
+
+  public constructor() {
+    super(REPLAY_SESSION_CAPACITY_MESSAGE);
+    this.name = "ReplaySessionCapacityError";
+  }
+}
+
 class AgentSessionRegistry {
   private readonly sessions = new Map<string, AgentSession>();
   private readonly singleton: AgentSession | undefined;
 
   public constructor(
     private readonly config: SentinelConfig,
-    fixedAgent?: SentinelAgent
+    fixedAgent: SentinelAgent | undefined,
+    private readonly reportSchedulerFailure: (error: unknown, sessionId: string) => void
   ) {
     if (fixedAgent || config.mode === "live") {
       const agent = fixedAgent ?? SentinelAgent.create(config);
@@ -94,17 +129,20 @@ class AgentSessionRegistry {
     const requestedId = sessionIdFromCookie(request.headers.cookie);
     let session = requestedId ? this.sessions.get(requestedId) : undefined;
     if (!session) {
-      this.evictOldestIfFull();
+      if (this.sessions.size >= MAX_REPLAY_SESSIONS) {
+        throw new ReplaySessionCapacityError();
+      }
       const id = randomUUID();
-      session = this.createSession(id, SentinelAgent.create(this.config));
+      session = this.createSession(id, SentinelAgent.create(this.replaySessionConfig()));
       this.sessions.set(id, session);
-      reply.header(
-        "set-cookie",
-        `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1_000}${this.config.secureSessionCookie ? "; Secure" : ""}`
-      );
     }
     session.lastAccessMs = now;
+    this.setSessionCookie(reply, session.id);
     return session;
+  }
+
+  public readiness(): { ready: boolean; reason?: string } {
+    return this.singleton?.agent.readiness() ?? { ready: true };
   }
 
   public close(): void {
@@ -114,7 +152,12 @@ class AgentSessionRegistry {
   }
 
   private createSession(id: string, agent: SentinelAgent): AgentSession {
-    return { id, agent, scheduler: new ReplayScheduler(agent), lastAccessMs: Date.now() };
+    return {
+      id,
+      agent,
+      scheduler: new ReplayScheduler(agent, (error) => this.reportSchedulerFailure(error, id)),
+      lastAccessMs: Date.now()
+    };
   }
 
   private evictExpired(now: number): void {
@@ -125,21 +168,31 @@ class AgentSessionRegistry {
     }
   }
 
-  private evictOldestIfFull(): void {
-    if (this.sessions.size < MAX_REPLAY_SESSIONS) return;
-    const oldest = [...this.sessions.values()].sort(
-      (left, right) => left.lastAccessMs - right.lastAccessMs
-    )[0];
-    if (!oldest) return;
-    oldest.scheduler.stop();
-    this.sessions.delete(oldest.id);
+  private replaySessionConfig(): SentinelConfig {
+    return { ...this.config, telegram: { enabled: false } };
+  }
+
+  private setSessionCookie(reply: FastifyReply, id: string): void {
+    reply.header(
+      "set-cookie",
+      `${SESSION_COOKIE}=${id}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_TTL_MS / 1_000}${this.config.secureSessionCookie ? "; Secure" : ""}`
+    );
   }
 }
 
 export async function buildServer(options: ServerOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? options.agent?.config ?? loadConfig();
-  const registry = new AgentSessionRegistry(config, options.agent);
   const app = Fastify({ logger: { level: config.logLevel } });
+  const registry = new AgentSessionRegistry(config, options.agent, (error, sessionId) =>
+    app.log.error({ err: error, sessionId }, "Replay scheduler stopped after runtime failure")
+  );
+
+  app.setErrorHandler((error, _request, reply) => {
+    if (error instanceof ReplaySessionCapacityError) {
+      return reply.code(error.statusCode).send({ error: error.message, code: error.code });
+    }
+    return reply.send(error);
+  });
 
   await app.register(cors, { origin: config.corsOrigin ?? false });
   app.addHook("onSend", async (request, reply, payload) => {
@@ -216,9 +269,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
         }
       }
     },
-    async (request, reply) => {
-      const { agent } = registry.resolve(request, reply);
-      const readiness = agent.readiness();
+    async (_request, reply) => {
+      const readiness = registry.readiness();
       if (!readiness.ready) {
         return reply.code(503).send({ status: "not_ready", ...readiness });
       }
@@ -232,7 +284,7 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       schema: {
         tags: ["Agent"],
         summary: "Get mode, replay state, latest decisions, and feed health",
-        response: { 200: { $ref: "AgentStatus#" } }
+        response: { 200: { $ref: "AgentStatus#" }, ...sessionCapacityErrorResponse }
       }
     },
     async (request, reply) => registry.resolve(request, reply).agent.status()
@@ -249,7 +301,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
             type: "object",
             required: ["fixtures"],
             properties: { fixtures: { type: "array", items: { $ref: "Fixture#" } } }
-          }
+          },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -269,7 +322,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
             type: "object",
             required: ["signals"],
             properties: { signals: { type: "array", items: { $ref: "Signal#" } } }
-          }
+          },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -289,7 +343,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
           required: ["id"],
           properties: { id: { type: "string", minLength: 1 } }
         },
-        response: { 200: { $ref: "Signal#" }, 404: { $ref: "Error#" } }
+        response: {
+          200: { $ref: "Signal#" },
+          404: { $ref: "Error#" },
+          ...sessionCapacityErrorResponse
+        }
       }
     },
     async (request, reply) => {
@@ -313,7 +371,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
             type: "object",
             required: ["alerts"],
             properties: { alerts: { type: "array", items: { $ref: "OperationalAlert#" } } }
-          }
+          },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -336,7 +395,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
               disclaimer: { const: "SIMULATION ONLY — NO REAL MONEY" },
               positions: { type: "array", items: { $ref: "PaperPosition#" } }
             }
-          }
+          },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -360,7 +420,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
               disclaimer: { const: "SIMULATION ONLY — NO REAL MONEY" },
               analytics: { $ref: "Analytics#" }
             }
-          }
+          },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -387,7 +448,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
             required: ["events"],
             properties: { events: { type: "array", items: { $ref: "AuditEvent#" } } }
           },
-          400: { $ref: "Error#" }
+          400: { $ref: "Error#" },
+          ...sessionCapacityErrorResponse
         }
       }
     },
@@ -408,7 +470,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
         tags: ["Replay"],
         summary: "Start deterministic replay at 1x, 2x, 5x, or 10x",
         body: { $ref: "ReplayControl#" },
-        response: { 200: { $ref: "ReplayResponse#" }, ...errorResponses }
+        response: {
+          200: { $ref: "ReplayResponse#" },
+          ...errorResponses,
+          ...sessionCapacityErrorResponse
+        }
       },
       preValidation: async (request) => {
         if (request.body === undefined) request.body = {};
@@ -419,7 +485,7 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       const parsed = replayControlSchema.safeParse(request.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
       try {
-        const replay = agent.startReplay(parsed.data.speed);
+        const replay = agent.startReplay(parsed.data.speed, { reserveNextAdvance: true });
         scheduler.start();
         return { replay };
       } catch (error) {
@@ -434,7 +500,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       schema: {
         tags: ["Replay"],
         summary: "Pause deterministic replay",
-        response: { 200: { $ref: "ReplayResponse#" }, 409: { $ref: "Error#" } }
+        response: {
+          200: { $ref: "ReplayResponse#" },
+          409: { $ref: "Error#" },
+          ...sessionCapacityErrorResponse
+        }
       }
     },
     async (request, reply) => {
@@ -456,7 +526,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
         tags: ["Replay"],
         summary: "Resume deterministic replay",
         body: { $ref: "ReplayControl#" },
-        response: { 200: { $ref: "ReplayResponse#" }, ...errorResponses }
+        response: {
+          200: { $ref: "ReplayResponse#" },
+          ...errorResponses,
+          ...sessionCapacityErrorResponse
+        }
       },
       preValidation: async (request) => {
         if (request.body === undefined) request.body = {};
@@ -467,7 +541,7 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       const parsed = replayControlSchema.safeParse(request.body ?? {});
       if (!parsed.success) return reply.code(400).send({ error: parsed.error.flatten() });
       try {
-        const replay = agent.resumeReplay(parsed.data.speed);
+        const replay = agent.resumeReplay(parsed.data.speed, { reserveNextAdvance: true });
         scheduler.start();
         return { replay };
       } catch (error) {
@@ -482,7 +556,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       schema: {
         tags: ["Replay"],
         summary: "Reset replay state and dynamic simulation state",
-        response: { 200: { $ref: "ReplayResponse#" }, 409: { $ref: "Error#" } }
+        response: {
+          200: { $ref: "ReplayResponse#" },
+          409: { $ref: "Error#" },
+          ...sessionCapacityErrorResponse
+        }
       }
     },
     async (request, reply) => {
@@ -504,7 +582,8 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
         summary: "Process exactly one deterministic replay input",
         response: {
           200: { type: "object", required: ["replay"], additionalProperties: true },
-          409: { $ref: "Error#" }
+          409: { $ref: "Error#" },
+          ...sessionCapacityErrorResponse
         }
       }
     },

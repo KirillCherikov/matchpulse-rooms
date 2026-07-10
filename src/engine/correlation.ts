@@ -40,6 +40,14 @@ export class EventCorrelator {
     oddsSourceTimestamp: string,
     decisionReceivedTimestamp: string
   ): CorrelatedEvent | undefined {
+    return this.correlations(fixtureId, oddsSourceTimestamp, decisionReceivedTimestamp)[0];
+  }
+
+  public correlations(
+    fixtureId: string,
+    oddsSourceTimestamp: string,
+    decisionReceivedTimestamp: string
+  ): CorrelatedEvent[] {
     const oddsSourceAt = new Date(oddsSourceTimestamp).getTime();
     const decisionReceivedAt = new Date(decisionReceivedTimestamp).getTime();
     const candidates = (this.eventsByFixture.get(fixtureId) ?? [])
@@ -67,6 +75,6 @@ export class EventCorrelator {
       })
       .filter((candidate): candidate is CorrelatedEvent => candidate !== undefined)
       .sort((left, right) => left.sourceLagMs - right.sourceLagMs);
-    return candidates[0];
+    return candidates;
   }
 }

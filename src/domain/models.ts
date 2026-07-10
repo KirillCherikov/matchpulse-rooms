@@ -26,6 +26,7 @@ export type AlertType =
   | "delayed_update"
   | "feed_recovery"
   | "odds_score_divergence"
+  | "terminal_event_rejected"
   | "invalid_timestamp"
   | "malformed_payload";
 export type ReplayStatus = "idle" | "running" | "paused" | "finished";

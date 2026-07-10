@@ -1,4 +1,4 @@
-import { Command } from "commander";
+import { Command, Option } from "commander";
 import dotenv from "dotenv";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
@@ -69,11 +69,15 @@ agentCommand
 const replay = program.command("replay").description("Deterministic replay controls");
 replay
   .command("start")
-  .option("--speed <speed>", "Replay speed: 1, 2, 5, or 10", "1")
+  .addOption(
+    new Option("--speed <speed>", "Replay speed: 1, 2, 5, or 10")
+      .choices(["1", "2", "5", "10"])
+      .default("1")
+  )
   .description("Start a replay session and print its initial state")
   .action((options: { speed: string }) => {
     const agent = SentinelAgent.create(loadConfig());
-    print({ replay: agent.startReplay(Number(options.speed) as 1 | 2 | 5 | 10) });
+    print({ replay: agent.startReplay(replaySpeed(options.speed)) });
   });
 replay
   .command("run")
@@ -128,4 +132,24 @@ function print(value: unknown): void {
   process.stdout.write(`${JSON.stringify(value, null, 2)}\n`);
 }
 
-void program.parseAsync(process.argv);
+function replaySpeed(value: string): 1 | 2 | 5 | 10 {
+  switch (value) {
+    case "1":
+      return 1;
+    case "2":
+      return 2;
+    case "5":
+      return 5;
+    case "10":
+      return 10;
+    default:
+      throw new Error("Replay speed must be one of 1x, 2x, 5x, or 10x");
+  }
+}
+
+void program.parseAsync(process.argv).catch((error: unknown) => {
+  process.stderr.write(
+    `Error: ${error instanceof Error ? error.message : "Unexpected CLI failure"}\n`
+  );
+  process.exitCode = 1;
+});

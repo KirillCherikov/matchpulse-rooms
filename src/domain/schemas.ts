@@ -70,10 +70,22 @@ export const matchEventSchema = z.object({
   rawReference: rawReferenceSchema
 });
 
-export const providerMessageSchema = z.discriminatedUnion("kind", [
-  oddsUpdateSchema,
-  matchEventSchema
-]);
+export const providerMessageSchema = z
+  .discriminatedUnion("kind", [oddsUpdateSchema, matchEventSchema])
+  .superRefine((message, context) => {
+    if (
+      message.kind === "score" &&
+      message.confirmed &&
+      message.type === "full_time" &&
+      !message.score
+    ) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["score"],
+        message: "A confirmed full-time event must include the final score"
+      });
+    }
+  });
 
 export function parseProviderMessage(payload: unknown) {
   const parsed = providerMessageSchema.parse(payload);

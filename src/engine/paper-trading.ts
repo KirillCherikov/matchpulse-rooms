@@ -72,9 +72,11 @@ export class PaperTradingSimulator {
     const exposure = this.openExposure();
     const cap = this.bankroll * this.config.maxExposureFraction;
     const requestedStake = this.bankroll * this.config.stakeFraction;
-    const stake = Number(
-      Math.max(0, Math.min(requestedStake, cap - exposure, this.bankroll - exposure)).toFixed(2)
+    const availableStake = Math.max(
+      0,
+      Math.min(requestedStake, cap - exposure, this.bankroll - exposure)
     );
+    const stake = Math.floor(availableStake * 100) / 100;
     if (stake <= 0) {
       return undefined;
     }
@@ -91,7 +93,7 @@ export class PaperTradingSimulator {
       note: "SIMULATION ONLY — NO REAL MONEY"
     };
     this.positions.push(position);
-    return position;
+    return { ...position };
   }
 
   public settle(
