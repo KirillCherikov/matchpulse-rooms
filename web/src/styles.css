@@ -352,6 +352,39 @@ dd {
 .detail-header {
   margin: 24px 0;
 }
+.confidence-panel {
+  border-top: 2px solid #ab86e8;
+  margin-top: 12px;
+}
+.confidence-components {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+}
+.confidence-component {
+  align-items: center;
+  border: 1px solid #253242;
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 12px;
+}
+.confidence-component span {
+  color: #aebdcc;
+  font-size: 0.77rem;
+  text-transform: capitalize;
+}
+.confidence-component strong {
+  color: #65d79a;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.confidence-component.negative strong {
+  color: #f07979;
+}
+.confidence-note {
+  margin-top: 14px;
+}
 
 @media (max-width: 980px) {
   .overview-grid,

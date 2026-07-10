@@ -28,3 +28,47 @@ jobs:
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
+
+  container:
+    name: Docker build and health smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build production image
+        run: docker build --tag txline-sentinel:ci .
+      - name: Start replay container
+        run: >-
+          docker run --detach
+          --name txline-sentinel-smoke
+          --publish 127.0.0.1:3310:3000
+          --env SENTINEL_MODE=replay
+          --env TELEGRAM_ENABLED=false
+          --env LOG_LEVEL=silent
+          --health-interval=1s
+          --health-start-period=1s
+          --health-timeout=3s
+          --health-retries=10
+          txline-sentinel:ci
+      - name: Verify container health and API
+        run: |
+          for attempt in {1..30}; do
+            status="$(docker inspect --format '{{.State.Health.Status}}' txline-sentinel-smoke)"
+            if [ "$status" = "healthy" ]; then
+              curl --fail --silent --show-error http://127.0.0.1:3310/health
+              curl --fail --silent --show-error http://127.0.0.1:3310/api/agent/status |
+                jq --exit-status '.mode == "replay" and .disclaimer == "SIMULATION ONLY — NO REAL MONEY"'
+              exit 0
+            fi
+            if [ "$status" = "unhealthy" ]; then
+              break
+            fi
+            sleep 1
+          done
+          docker inspect txline-sentinel-smoke
+          docker logs txline-sentinel-smoke
+          exit 1
+      - name: Stop smoke container
+        if: always()
+        run: docker rm --force txline-sentinel-smoke || true

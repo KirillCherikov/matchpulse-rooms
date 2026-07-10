@@ -38,10 +38,14 @@ test("judge can replay an explainable signal through settlement", async ({ page 
   await expect(page.getByText("settled", { exact: true })).toBeVisible();
   await page.getByRole("link", { name: "Open signal detail →" }).click();
   await expect(page.getByText("SIGNAL DETAIL")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Rule-based score components" })).toBeVisible();
+  await expect(page.getByText("Strategy 2026-07-replay-mvp", { exact: true })).toBeVisible();
+  await expect(page.getByText("base", { exact: true })).toBeVisible();
+  await expect(page.getByText("+32.0 pp", { exact: true })).toBeVisible();
   await expect(page.getByText("Movement persisted", { exact: true })).toBeVisible();
   await expect(page.getByText(/^30s persisted/)).toBeVisible();
   await expect(page.getByText(/^60s persisted/)).toBeVisible();
   await expect(page.getByText(/^300s persisted/)).toBeVisible();
-  await expect(page.getByText("Entry comparison: equal", { exact: true })).toBeVisible();
+  await expect(page.getByText("Entry comparison: immediate", { exact: true })).toBeVisible();
   await expect(page.getByText("SIMULATION ONLY — NO REAL MONEY")).toBeVisible();
 });

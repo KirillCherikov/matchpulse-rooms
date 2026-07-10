@@ -2,7 +2,7 @@
   "name": "txline-sentinel",
   "version": "0.1.0",
   "private": true,
-  "description": "Explainable real-time sports market intelligence powered by TxLINE.",
+  "description": "Explainable real-time sports market intelligence designed for TxLINE.",
   "type": "module",
   "engines": {
     "node": ">=22.13.0",

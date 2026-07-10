@@ -457,7 +457,8 @@ function SignalDetail({ id }: { id: string }): JSX.Element {
           </h2>
           <p>Immediate entry: {signal.counterfactual.immediateEntryOdds.toFixed(2)}</p>
           <p>
-            Confirmation entry: {signal.counterfactual.confirmationEntryOdds?.toFixed(2) ?? "—"}
+            Confirmation entry (30s horizon):{" "}
+            {signal.counterfactual.confirmationEntryOdds?.toFixed(2) ?? "—"}
           </p>
           <p>Entry comparison: {signal.counterfactual.betterEntry?.replaceAll("_", " ") ?? "—"}</p>
           <p className="subtle">
@@ -474,6 +475,29 @@ function SignalDetail({ id }: { id: string }): JSX.Element {
             ))}
           </div>
         </article>
+      </section>
+      <section className="panel confidence-panel">
+        <div className="section-heading">
+          <div>
+            <p className="panel-kicker">Decision score</p>
+            <h2>Rule-based score components</h2>
+          </div>
+          <span>Strategy {signal.strategyConfigurationVersion}</span>
+        </div>
+        <div className="confidence-components">
+          {signal.confidenceComponents.map((component) => (
+            <div
+              className={`confidence-component ${component.contribution >= 0 ? "positive" : "negative"}`}
+              key={component.component}
+            >
+              <span>{component.component.replaceAll("_", " ")}</span>
+              <strong>{formatScoreContribution(component.contribution)}</strong>
+            </div>
+          ))}
+        </div>
+        <p className="subtle confidence-note">
+          Contributions are deterministic strategy weights, not calibrated outcome probabilities.
+        </p>
       </section>
       <section className="panel timeline-panel">
         <p className="panel-kicker">Outcome</p>
@@ -582,6 +606,9 @@ function formatSelection(value: Signal["selection"]): string {
 }
 function formatReturn(value: number | undefined): string {
   return value === undefined ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
+function formatScoreContribution(value: number): string {
+  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)} pp`;
 }
 function time(value: string): string {
   return new Date(value).toLocaleTimeString([], {
