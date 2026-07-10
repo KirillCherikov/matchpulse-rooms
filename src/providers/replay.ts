@@ -18,6 +18,18 @@ export class ReplayTxLineProvider implements ControllableReplayProvider {
   ) {
     this.mode = mode;
     this.messages = replayMessages.map((message) => parseProviderMessage(message));
+    for (let index = 1; index < this.messages.length; index += 1) {
+      const previous = this.messages[index - 1];
+      const current = this.messages[index];
+      if (
+        previous &&
+        current &&
+        new Date(current.receivedTimestamp).getTime() <
+          new Date(previous.receivedTimestamp).getTime()
+      ) {
+        throw new Error("Replay messages must be ordered by nondecreasing received timestamp");
+      }
+    }
   }
 
   private readonly messages: ProviderMessage[];
@@ -41,11 +53,11 @@ export class ReplayTxLineProvider implements ControllableReplayProvider {
   }
 
   public start(speed?: ReplayState["speed"]): ReplayState {
-    if (speed !== undefined) {
-      this.setSpeed(speed);
-    }
     if (this.status === "finished") {
       this.reset();
+    }
+    if (speed !== undefined) {
+      this.setSpeed(speed);
     }
     this.status = "running";
     return this.getReplayState();
@@ -68,6 +80,7 @@ export class ReplayTxLineProvider implements ControllableReplayProvider {
   public reset(): ReplayState {
     this.cursor = 0;
     this.status = "idle";
+    this.speed = 1;
     this.simulatedTime = undefined;
     return this.getReplayState();
   }

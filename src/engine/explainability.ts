@@ -3,7 +3,7 @@ import type { OperationalAlert, Signal, SignalExplanation } from "../domain/mode
 export function buildExplanation(signal: Signal, alerts: OperationalAlert[]): SignalExplanation {
   const direction = signal.movement.probabilityDelta >= 0 ? "increased" : "decreased";
   const confirmedEvent = signal.correlatedEvent
-    ? `${formatEvent(signal.correlatedEvent.event.type)} at ${signal.correlatedEvent.event.minute}'.`
+    ? `${formatEvent(signal.correlatedEvent.event.type)} at ${signal.correlatedEvent.event.minute}' (${signal.correlatedEvent.relationship.replaceAll("_", " ")}).`
     : undefined;
   const dataQuality =
     alerts.length === 0
@@ -39,7 +39,11 @@ function reasonFor(rule: string): string {
     abnormal_relative_to_baseline: "movement was abnormal relative to the rolling baseline",
     momentum_continuation: "successive updates continued in the same direction",
     market_reversal: "the latest update reversed the prior movement direction",
-    confirmed_match_event: "a confirmed match event fell inside the correlation window",
+    temporally_associated_event: "a confirmed match event was available inside the causal window",
+    confirmed_match_event: "the confirmed event preceded and supported the market reaction",
+    event_consistent_movement: "the movement direction was consistent with the confirmed event",
+    event_market_divergence: "the associated event did not support the selected movement direction",
+    late_event_confirmation: "event confirmation arrived after the odds source timestamp",
     unexplained_market_movement: "no confirmed match event explained the movement",
     data_quality_warning: "a feed-quality warning reduced confidence"
   };

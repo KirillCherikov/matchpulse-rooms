@@ -1,25 +1,76 @@
 import { describe, expect, it } from "vitest";
 import { loadConfig } from "../../src/config.js";
+import type { CorrelatedEvent, OddsUpdate } from "../../src/domain/models.js";
 import { EventCorrelator } from "../../src/engine/correlation.js";
 import { DataQualitySentinel } from "../../src/engine/data-quality.js";
 import { normalizeOddsUpdate } from "../../src/engine/odds.js";
 import { SignalEngine } from "../../src/engine/signal-engine.js";
 import { fixture, matchEvent, oddsUpdate, timestamp } from "../helpers.js";
 
+function postEventGoal(seconds = 8): CorrelatedEvent {
+  const event = matchEvent("goal", 1, seconds);
+  return {
+    event,
+    relationship: "post_event_reaction",
+    sourceLagMs: 2_000,
+    confirmationLeadMs: 2_000
+  };
+}
+
+function withAwayOdds(update: OddsUpdate, awayOdds: number): OddsUpdate {
+  return {
+    ...update,
+    selections: update.selections.map((selection) =>
+      selection.selection === "away" ? { ...selection, decimalOdds: awayOdds } : selection
+    )
+  };
+}
+
 describe("event correlation and signal detection", () => {
-  it("correlates only confirmed events inside the configured time window", () => {
+  it("correlates only an already available event that precedes the odds source time", () => {
     const correlator = new EventCorrelator(30_000);
     const event = matchEvent("goal", 1, 30);
     correlator.record(event);
-    expect(correlator.correlate(fixture.id, timestamp(50))?.event.id).toBe("goal");
-    expect(correlator.correlate(fixture.id, timestamp(70))).toBeUndefined();
+
+    const correlation = correlator.correlate(fixture.id, timestamp(50), timestamp(50));
+    expect(correlation).toMatchObject({
+      relationship: "post_event_reaction",
+      sourceLagMs: 20_000,
+      confirmationLeadMs: 20_000
+    });
+    expect(correlation?.event.id).toBe("goal");
+    expect(correlator.correlate(fixture.id, timestamp(70), timestamp(70))).toBeUndefined();
+  });
+
+  it("does not use a future-source event even when it was received before the decision", () => {
+    const correlator = new EventCorrelator(30_000);
+    correlator.record(matchEvent("future-goal", 1, 60));
+
+    expect(correlator.correlate(fixture.id, timestamp(50), timestamp(70))).toBeUndefined();
+  });
+
+  it("does not expose an event before receipt and labels later receipt as retrospective", () => {
+    const correlator = new EventCorrelator(30_000);
+    const event = {
+      ...matchEvent("delayed-goal", 1, 30),
+      receivedTimestamp: timestamp(55)
+    };
+    correlator.record(event);
+
+    expect(correlator.correlate(fixture.id, timestamp(50), timestamp(54))).toBeUndefined();
+    expect(correlator.correlate(fixture.id, timestamp(50), timestamp(60))).toMatchObject({
+      relationship: "late_event_confirmation",
+      sourceLagMs: 20_000,
+      confirmationLeadMs: 5_000
+    });
   });
 
   it("detects duplicate, gap, out-of-order, stale, delayed, and recovery conditions", () => {
     const sentinel = new DataQualitySentinel({
       staleOddsMs: 10_000,
       staleScoreMs: 10_000,
-      delayedUpdateMs: 1_000
+      delayedUpdateMs: 1_000,
+      seenIdLimitPerFeed: 100
     });
     const first = oddsUpdate("one", 1, 0);
     expect(sentinel.inspect(first).shouldProcess).toBe(true);
@@ -39,20 +90,133 @@ describe("event correlation and signal detection", () => {
     expect(alertTypes).toContain("feed_recovery");
   });
 
-  it("creates a high-confidence event-confirmed signal only after threshold movement", () => {
-    const config = loadConfig({ SENTINEL_MODE: "replay" });
+  it("uses the configured rule weights, threshold, and strategy version", () => {
+    const baseConfig = loadConfig({ SENTINEL_MODE: "replay" });
+    const config = {
+      ...baseConfig,
+      strategyConfigurationVersion: "custom-rule-profile-v2",
+      thresholds: {
+        ...baseConfig.thresholds,
+        minRuleBasedConfidenceToTrade: 0.79
+      },
+      confidenceWeights: {
+        base: 0.1,
+        absoluteProbabilityShift: 0.2,
+        rapidProbabilityShift: 0.3,
+        abnormalRelativeToBaseline: 0,
+        momentumContinuation: 0,
+        confirmedMatchEvent: 0.2,
+        lateEventConfirmation: 0,
+        unexplainedMovement: 0,
+        warningPenalty: 0,
+        criticalPenalty: 0,
+        minimum: 0,
+        maximum: 1
+      }
+    };
     const engine = new SignalEngine(config);
     const opening = normalizeOddsUpdate(oddsUpdate("opening", 1, 0, 3.2));
     const shifted = normalizeOddsUpdate(oddsUpdate("shift", 2, 10, 1.7));
     expect(engine.process(opening, { fixture, alerts: [] })).toBeUndefined();
-    const event = matchEvent("goal", 1, 8);
+
     const signal = engine.process(shifted, {
       fixture,
-      correlatedEvent: { event, distanceMs: 2_000 },
+      correlatedEvent: postEventGoal(),
       alerts: []
     });
-    expect(signal?.triggeredRules).toContain("confirmed_match_event");
-    expect(signal?.confidence).toBeGreaterThanOrEqual(config.thresholds.minConfidenceToTrade);
-    expect(signal?.paperDecision).toBe("opened");
+
+    expect(signal?.triggeredRules).toEqual(
+      expect.arrayContaining([
+        "absolute_probability_shift",
+        "rapid_probability_shift",
+        "confirmed_match_event",
+        "event_consistent_movement"
+      ])
+    );
+    expect(signal?.ruleBasedConfidenceScore).toBe(0.8);
+    expect(signal?.confidenceComponents).toEqual(
+      expect.arrayContaining([
+        { component: "base", contribution: 0.1 },
+        { component: "confirmed_match_event", contribution: 0.2 }
+      ])
+    );
+    expect(signal?.strategyConfigurationVersion).toBe("custom-rule-profile-v2");
+    expect(signal?.paperDecision).toBe("eligible");
+
+    const strictEngine = new SignalEngine({
+      ...config,
+      thresholds: { ...config.thresholds, minRuleBasedConfidenceToTrade: 0.81 }
+    });
+    strictEngine.process(opening, { fixture, alerts: [] });
+    const belowCustomThreshold = strictEngine.process(shifted, {
+      fixture,
+      correlatedEvent: postEventGoal(),
+      alerts: []
+    });
+    expect(belowCustomThreshold?.ruleBasedConfidenceScore).toBe(0.8);
+    expect(belowCustomThreshold?.paperDecision).toBe("not_eligible");
+  });
+
+  it("never makes a falling selection eligible for a long confirmation position", () => {
+    const config = loadConfig({ SENTINEL_MODE: "replay" });
+    const engine = new SignalEngine(config);
+    const opening = normalizeOddsUpdate(oddsUpdate("opening", 1, 0, 1.7));
+    const shifted = normalizeOddsUpdate(oddsUpdate("falling-home", 2, 10, 10));
+    engine.process(opening, { fixture, alerts: [] });
+
+    const signal = engine.process(shifted, {
+      fixture,
+      correlatedEvent: postEventGoal(),
+      alerts: []
+    });
+
+    expect(signal?.selection).toBe("home");
+    expect(signal?.movement.probabilityDelta).toBeLessThan(0);
+    expect(signal?.triggeredRules).toContain("event_market_divergence");
+    expect(signal?.paperDecision).toBe("not_eligible");
+  });
+
+  it("does not treat an incompatible positive movement as event confirmation", () => {
+    const config = loadConfig({ SENTINEL_MODE: "replay" });
+    const engine = new SignalEngine(config);
+    const opening = normalizeOddsUpdate(withAwayOdds(oddsUpdate("opening", 1, 0), 6));
+    const shifted = normalizeOddsUpdate(withAwayOdds(oddsUpdate("away-rise", 2, 10), 1.5));
+    engine.process(opening, { fixture, alerts: [] });
+
+    const signal = engine.process(shifted, {
+      fixture,
+      correlatedEvent: postEventGoal(),
+      alerts: []
+    });
+
+    expect(signal?.selection).toBe("away");
+    expect(signal?.movement.probabilityDelta).toBeGreaterThan(0);
+    expect(signal?.triggeredRules).toContain("event_market_divergence");
+    expect(signal?.triggeredRules).not.toContain("confirmed_match_event");
+    expect(signal?.paperDecision).toBe("not_eligible");
+  });
+
+  it("does not make a retrospectively confirmed movement paper-eligible", () => {
+    const config = loadConfig({ SENTINEL_MODE: "replay" });
+    const engine = new SignalEngine(config);
+    engine.process(normalizeOddsUpdate(oddsUpdate("opening", 1, 0, 3.2)), {
+      fixture,
+      alerts: []
+    });
+    const event = matchEvent("late-goal", 1, 8);
+    const signal = engine.process(normalizeOddsUpdate(oddsUpdate("shift", 2, 10, 1.7, 3_000)), {
+      fixture,
+      correlatedEvent: {
+        event: { ...event, receivedTimestamp: timestamp(12) },
+        relationship: "late_event_confirmation",
+        sourceLagMs: 2_000,
+        confirmationLeadMs: 1_000
+      },
+      alerts: []
+    });
+
+    expect(signal?.triggeredRules).toContain("late_event_confirmation");
+    expect(signal?.triggeredRules).not.toContain("confirmed_match_event");
+    expect(signal?.paperDecision).toBe("not_eligible");
   });
 });

@@ -26,10 +26,11 @@ export type AlertType =
   | "delayed_update"
   | "feed_recovery"
   | "odds_score_divergence"
+  | "invalid_timestamp"
   | "malformed_payload";
 export type ReplayStatus = "idle" | "running" | "paused" | "finished";
 export type PaperPositionStatus = "open" | "settled";
-export type PaperDecision = "opened" | "declined" | "not_eligible";
+export type PaperDecision = "eligible" | "opened" | "declined" | "not_eligible";
 export type PositionOutcome = "won" | "lost" | "void";
 
 export interface Fixture {
@@ -84,6 +85,7 @@ export interface NormalizedOddsSelection extends OddsSelection {
 
 export interface NormalizedOddsSnapshot extends Omit<OddsUpdate, "selections"> {
   selections: NormalizedOddsSelection[];
+  bookPercentage: number;
   overround: number;
 }
 
@@ -104,7 +106,21 @@ export interface MovementMetrics {
 
 export interface CorrelatedEvent {
   event: MatchEvent;
-  distanceMs: number;
+  relationship: "post_event_reaction" | "late_event_confirmation";
+  sourceLagMs: number;
+  confirmationLeadMs: number;
+}
+
+export interface FeedHealthState {
+  status: "unknown" | "healthy" | "stale";
+  lastReceivedTimestamp?: string;
+  ageMs?: number;
+}
+
+export interface FeedHealthSummary {
+  status: "unknown" | "healthy" | "degraded";
+  odds: FeedHealthState;
+  score: FeedHealthState;
 }
 
 export interface OperationalAlert {
@@ -131,7 +147,9 @@ export interface CounterfactualPoint {
   horizonSeconds: number;
   observedAt: string;
   normalizedProbability: number;
-  probabilityDelta: number;
+  probabilityChangeAfterSignal: number;
+  retainedMovementRatio: number;
+  observationLagSeconds: number;
   classification: "persisted" | "reversed" | "inconclusive";
 }
 
@@ -139,7 +157,16 @@ export interface CounterfactualEvaluation {
   horizons: CounterfactualPoint[];
   immediateEntryOdds: number;
   confirmationEntryOdds?: number;
-  movementPersisted?: boolean;
+  confirmationDelaySeconds?: number;
+  movementAssessment?: CounterfactualPoint["classification"];
+  immediateReturn?: number;
+  confirmationReturn?: number;
+  betterEntry?: "immediate" | "confirmation" | "equal" | "unavailable";
+}
+
+export interface ConfidenceComponent {
+  component: string;
+  contribution: number;
 }
 
 export interface SignalOutcome {
@@ -167,7 +194,8 @@ export interface Signal {
   movement: MovementMetrics;
   correlatedEvent?: CorrelatedEvent;
   latencyMs: number;
-  confidence: number;
+  ruleBasedConfidenceScore: number;
+  confidenceComponents: ConfidenceComponent[];
   triggeredRules: string[];
   explanation: SignalExplanation;
   paperDecision: PaperDecision;
@@ -201,12 +229,13 @@ export interface Analytics {
   maximumDrawdown: number;
   maximumDrawdownPercent: number;
   signalPrecision: number;
-  highConfidenceSignals: number;
+  highRuleBasedConfidenceSignals: number;
 }
 
 export interface AuditEvent {
   id: string;
   sequence: number;
+  runId: string;
   correlationId: string;
   type:
     | "replay_control"
@@ -215,6 +244,7 @@ export interface AuditEvent {
     | "operational_alert"
     | "signal_decision"
     | "paper_execution"
+    | "counterfactual_evaluation"
     | "settlement"
     | "recovery"
     | "error";
@@ -238,7 +268,9 @@ export interface AgentStatus {
   latestSignal?: Signal;
   latestAlert?: OperationalAlert;
   latestEvent?: MatchEvent;
+  latestConfirmedEvent?: MatchEvent;
   latestOdds?: NormalizedOddsSnapshot;
+  feedHealth: FeedHealthSummary;
   auditEvents: number;
   disclaimer: "SIMULATION ONLY — NO REAL MONEY";
 }

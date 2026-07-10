@@ -74,6 +74,7 @@ export function paperEligibleSignal(overrides: Partial<Signal> = {}): Signal {
     impliedProbabilityAfter: 0.4,
     normalizedProbabilityBefore: 0.36,
     normalizedProbabilityAfter: 0.42,
+    latencyMs: 0,
     movement: {
       probabilityDelta: 0.06,
       percentagePointMovement: 6,
@@ -86,10 +87,18 @@ export function paperEligibleSignal(overrides: Partial<Signal> = {}): Signal {
         volatility: 0.002
       }
     },
-    confidence: 0.9,
-    triggeredRules: ["absolute_probability_shift", "confirmed_match_event"],
+    ruleBasedConfidenceScore: 0.9,
+    confidenceComponents: [
+      { component: "base", contribution: 0.32 },
+      { component: "confirmed_match_event", contribution: 0.22 }
+    ],
+    triggeredRules: [
+      "absolute_probability_shift",
+      "confirmed_match_event",
+      "event_consistent_movement"
+    ],
     explanation: { summary: "Test", dataQuality: "Clear", decision: "Open", reasons: [] },
-    paperDecision: "opened",
+    paperDecision: "eligible",
     strategyConfigurationVersion: "test",
     counterfactual: { horizons: [], immediateEntryOdds: 2.5 },
     ...overrides

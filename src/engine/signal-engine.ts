@@ -18,6 +18,7 @@ export interface SignalContext {
   fixture: Fixture;
   correlatedEvent?: CorrelatedEvent;
   alerts: OperationalAlert[];
+  activeCriticalFeed?: boolean;
 }
 
 interface Candidate {
@@ -97,47 +98,69 @@ export class SignalEngine {
     });
     this.snapshots.set(marketKey, snapshot);
 
-    const candidate = candidates.sort(
+    const eligibleCandidates = candidates.filter((candidate) => {
+      const hasPrimaryThreshold = candidate.rules.some((rule) =>
+        [
+          "absolute_probability_shift",
+          "rapid_probability_shift",
+          "abnormal_relative_to_baseline"
+        ].includes(rule)
+      );
+      const hasQualifiedMomentum =
+        candidate.rules.includes("momentum_continuation") &&
+        Math.abs(candidate.movement.probabilityDelta) >=
+          this.config.thresholds.absoluteProbabilityMove / 2;
+      return hasPrimaryThreshold || hasQualifiedMomentum;
+    });
+    const candidate = eligibleCandidates.sort(
       (left, right) =>
         Math.abs(right.movement.probabilityDelta) - Math.abs(left.movement.probabilityDelta)
     )[0];
-    const hasPrimaryThreshold = candidate?.rules.some((rule) =>
-      [
-        "absolute_probability_shift",
-        "rapid_probability_shift",
-        "abnormal_relative_to_baseline"
-      ].includes(rule)
-    );
-    const hasQualifiedMomentum =
-      candidate?.rules.includes("momentum_continuation") &&
-      Math.abs(candidate.movement.probabilityDelta) >=
-        this.config.thresholds.absoluteProbabilityMove / 2;
-    if (!candidate || (!hasPrimaryThreshold && !hasQualifiedMomentum)) {
+    if (!candidate) {
       return undefined;
     }
 
     const rules = [...candidate.rules];
+    const eventConsistent =
+      context.correlatedEvent?.relationship === "post_event_reaction" &&
+      this.eventSupportsLongConfirmation(
+        context.correlatedEvent,
+        candidate.selection,
+        candidate.movement.probabilityDelta
+      );
     if (context.correlatedEvent) {
-      rules.push("confirmed_match_event");
+      rules.push("temporally_associated_event");
+      if (context.correlatedEvent.relationship === "late_event_confirmation") {
+        rules.push("late_event_confirmation");
+      } else if (eventConsistent) {
+        rules.push("confirmed_match_event", "event_consistent_movement");
+      } else {
+        rules.push("event_market_divergence");
+      }
     } else {
       rules.push("unexplained_market_movement");
     }
-    if (context.alerts.some((alert) => alert.severity !== "info")) {
+    if (context.activeCriticalFeed || context.alerts.some((alert) => alert.severity !== "info")) {
       rules.push("data_quality_warning");
     }
-    const confidence = this.calculateConfidence(rules, context.alerts);
-    const criticalFeedIssue = context.alerts.some((alert) => alert.severity === "critical");
+    const confidence = this.calculateRuleBasedConfidence(
+      rules,
+      context.alerts,
+      context.activeCriticalFeed === true
+    );
+    const criticalFeedIssue =
+      context.activeCriticalFeed || context.alerts.some((alert) => alert.severity === "critical");
     const paperDecision =
-      context.correlatedEvent &&
-      confidence >= this.config.thresholds.minConfidenceToTrade &&
+      eventConsistent &&
+      candidate.movement.probabilityDelta > 0 &&
+      context.fixture.status === "live" &&
+      confidence.score >= this.config.thresholds.minRuleBasedConfidenceToTrade &&
       !criticalFeedIssue
-        ? "opened"
+        ? "eligible"
         : "not_eligible";
     this.signalSequence += 1;
-    const latencyMs = Math.max(
-      0,
-      new Date(snapshot.receivedTimestamp).getTime() - new Date(snapshot.sourceTimestamp).getTime()
-    );
+    const latencyMs =
+      new Date(snapshot.receivedTimestamp).getTime() - new Date(snapshot.sourceTimestamp).getTime();
     return {
       id: `signal-${String(this.signalSequence).padStart(4, "0")}`,
       correlationId: `signal:${snapshot.fixtureId}:${snapshot.id}`,
@@ -157,7 +180,8 @@ export class SignalEngine {
       movement: candidate.movement,
       ...(context.correlatedEvent ? { correlatedEvent: context.correlatedEvent } : {}),
       latencyMs,
-      confidence,
+      ruleBasedConfidenceScore: confidence.score,
+      confidenceComponents: confidence.components,
       triggeredRules: rules,
       explanation: {
         summary: "Explanation pending deterministic template rendering.",
@@ -166,21 +190,68 @@ export class SignalEngine {
         reasons: []
       },
       paperDecision,
-      strategyConfigurationVersion: "2026-07-replay-mvp",
-      counterfactual: { horizons: [], immediateEntryOdds: candidate.after.decimalOdds }
+      strategyConfigurationVersion: this.config.strategyConfigurationVersion,
+      counterfactual: {
+        horizons: [],
+        immediateEntryOdds: candidate.after.decimalOdds,
+        ...(context.correlatedEvent
+          ? {
+              confirmationEntryOdds: candidate.after.decimalOdds,
+              confirmationDelaySeconds: Math.max(
+                0,
+                (new Date(context.correlatedEvent.event.receivedTimestamp).getTime() -
+                  new Date(snapshot.sourceTimestamp).getTime()) /
+                  1_000
+              )
+            }
+          : {})
+      }
     };
   }
 
-  private calculateConfidence(rules: string[], alerts: OperationalAlert[]): number {
-    let confidence = 0.32;
-    if (rules.includes("absolute_probability_shift")) confidence += 0.16;
-    if (rules.includes("rapid_probability_shift")) confidence += 0.14;
-    if (rules.includes("abnormal_relative_to_baseline")) confidence += 0.08;
-    if (rules.includes("momentum_continuation")) confidence += 0.06;
-    if (rules.includes("confirmed_match_event")) confidence += 0.22;
-    if (rules.includes("unexplained_market_movement")) confidence -= 0.03;
-    if (alerts.some((alert) => alert.severity === "warning")) confidence -= 0.12;
-    if (alerts.some((alert) => alert.severity === "critical")) confidence -= 0.35;
-    return Math.max(0.05, Math.min(0.98, Number(confidence.toFixed(2))));
+  private calculateRuleBasedConfidence(
+    rules: string[],
+    alerts: OperationalAlert[],
+    activeCriticalFeed: boolean
+  ): { score: number; components: Signal["confidenceComponents"] } {
+    const weights = this.config.confidenceWeights;
+    const components: Signal["confidenceComponents"] = [
+      { component: "base", contribution: weights.base }
+    ];
+    const add = (rule: string, contribution: number): void => {
+      if (rules.includes(rule)) components.push({ component: rule, contribution });
+    };
+    add("absolute_probability_shift", weights.absoluteProbabilityShift);
+    add("rapid_probability_shift", weights.rapidProbabilityShift);
+    add("abnormal_relative_to_baseline", weights.abnormalRelativeToBaseline);
+    add("momentum_continuation", weights.momentumContinuation);
+    add("confirmed_match_event", weights.confirmedMatchEvent);
+    add("late_event_confirmation", weights.lateEventConfirmation);
+    add("unexplained_market_movement", weights.unexplainedMovement);
+    if (activeCriticalFeed || alerts.some((alert) => alert.severity === "critical")) {
+      components.push({
+        component: "critical_data_quality",
+        contribution: weights.criticalPenalty
+      });
+    } else if (alerts.some((alert) => alert.severity === "warning")) {
+      components.push({ component: "warning_data_quality", contribution: weights.warningPenalty });
+    }
+    const rawScore = components.reduce((sum, component) => sum + component.contribution, 0);
+    return {
+      score: Math.max(weights.minimum, Math.min(weights.maximum, Number(rawScore.toFixed(2)))),
+      components
+    };
+  }
+
+  private eventSupportsLongConfirmation(
+    correlatedEvent: CorrelatedEvent,
+    selection: SelectionKey,
+    probabilityDelta: number
+  ): boolean {
+    if (probabilityDelta <= 0 || selection === "draw") return false;
+    const event = correlatedEvent.event;
+    if (event.type === "goal") return event.team === selection;
+    if (event.type === "red_card" && event.team) return event.team !== selection;
+    return false;
   }
 }

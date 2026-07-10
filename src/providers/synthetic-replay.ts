@@ -108,10 +108,25 @@ export function createSyntheticReplayMessages(): ProviderMessage[] {
     },
     {
       kind: "odds",
+      id: "odds-horizon-030-004",
+      fixtureId,
+      market: "match_winner",
+      sequence: 4,
+      sourceTimestamp: iso(102),
+      receivedTimestamp: iso(102),
+      selections: [
+        { selection: "home", decimalOdds: 1.76 },
+        { selection: "draw", decimalOdds: 4.6 },
+        { selection: "away", decimalOdds: 6.35 }
+      ],
+      rawReference: "synthetic://odds/horizon-030-004"
+    },
+    {
+      kind: "odds",
       id: "odds-recovery-gap-005",
       fixtureId,
       market: "match_winner",
-      sequence: 5,
+      sequence: 6,
       sourceTimestamp: iso(150),
       receivedTimestamp: iso(150),
       selections: [
@@ -126,7 +141,7 @@ export function createSyntheticReplayMessages(): ProviderMessage[] {
       id: "odds-out-of-order-004",
       fixtureId,
       market: "match_winner",
-      sequence: 4,
+      sequence: 5,
       sourceTimestamp: iso(155),
       receivedTimestamp: iso(155),
       selections: [
@@ -153,7 +168,7 @@ export function createSyntheticReplayMessages(): ProviderMessage[] {
       id: "odds-confirmation-006",
       fixtureId,
       market: "match_winner",
-      sequence: 6,
+      sequence: 7,
       sourceTimestamp: iso(190),
       receivedTimestamp: iso(190),
       selections: [
@@ -168,13 +183,13 @@ export function createSyntheticReplayMessages(): ProviderMessage[] {
       id: "odds-long-horizon-007",
       fixtureId,
       market: "match_winner",
-      sequence: 7,
-      sourceTimestamp: iso(390),
-      receivedTimestamp: iso(390),
+      sequence: 8,
+      sourceTimestamp: iso(372),
+      receivedTimestamp: iso(372),
       selections: [
-        { selection: "home", decimalOdds: 1.55 },
-        { selection: "draw", decimalOdds: 6.5 },
-        { selection: "away", decimalOdds: 9.2 }
+        { selection: "home", decimalOdds: 1.68 },
+        { selection: "draw", decimalOdds: 5.1 },
+        { selection: "away", decimalOdds: 7.2 }
       ],
       rawReference: "synthetic://odds/long-horizon-007"
     },

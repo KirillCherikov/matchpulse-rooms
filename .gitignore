@@ -17,5 +17,6 @@ test-results/
 .vite/
 data/*.db
 data/*.db-*
+data/audit*.json
 *.log
 .DS_Store

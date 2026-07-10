@@ -126,6 +126,9 @@ h2 {
   grid-template-columns: repeat(4, minmax(0, 1fr));
   margin: 20px 0;
 }
+.analytics-grid {
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+}
 .metric-card,
 .panel {
   border: 1px solid #263140;

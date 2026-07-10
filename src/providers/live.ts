@@ -10,7 +10,14 @@ export class LiveTxLineProvider implements TxLineProvider {
   public readonly mode = "live" as const;
   private readonly received: ProviderMessage[] = [];
 
-  public constructor(private readonly enabled: boolean) {}
+  public constructor(
+    private readonly enabled: boolean,
+    private readonly maxRetainedMessages = 1_000
+  ) {
+    if (!Number.isInteger(maxRetainedMessages) || maxRetainedMessages < 1) {
+      throw new Error("Live message retention limit must be a positive integer");
+    }
+  }
 
   public fixtures(): Fixture[] {
     return [];
@@ -25,6 +32,9 @@ export class LiveTxLineProvider implements TxLineProvider {
   public ingest(rawPayload: unknown): ProviderMessage {
     const message = parseProviderMessage(rawPayload);
     this.received.push(message);
+    if (this.received.length > this.maxRetainedMessages) {
+      this.received.splice(0, this.received.length - this.maxRetainedMessages);
+    }
     return structuredClone(message);
   }
 

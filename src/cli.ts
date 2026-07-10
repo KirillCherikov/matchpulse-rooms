@@ -1,9 +1,13 @@
 import { Command } from "commander";
+import dotenv from "dotenv";
 import { mkdir, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 import { SentinelAgent } from "./application/sentinel-agent.js";
 import { loadConfig } from "./config.js";
 import { startServer } from "./server.js";
+
+dotenv.config({ path: ".env.local", quiet: true });
+dotenv.config({ quiet: true });
 
 const program = new Command();
 program
@@ -19,11 +23,12 @@ program
     print({ health: "ok", status: agent.status() });
   });
 
-program
-  .command("txline-check")
+const txline = program.command("txline").description("TxLINE integration commands");
+txline
+  .command("check")
   .description("Check whether a documented live transport is configured")
   .action(() => {
-    const agent = SentinelAgent.create(loadConfig());
+    const agent = SentinelAgent.create({ ...loadConfig(), mode: "live" });
     print(agent.readiness());
   });
 
@@ -53,8 +58,9 @@ alerts
     print({ alerts: agent.allAlerts() });
   });
 
-program
-  .command("agent-start")
+const agentCommand = program.command("agent").description("Agent commands");
+agentCommand
+  .command("start")
   .description("Start the local API and dashboard server")
   .action(async () => {
     await startServer();
@@ -77,16 +83,18 @@ replay
     print({ status: agent.status(), analytics: agent.analytics(), positions: agent.positions() });
   });
 
-program
-  .command("backtest-run")
+const backtest = program.command("backtest").description("Backtest commands");
+backtest
+  .command("run")
   .description("Alias for deterministic replay evaluation")
   .action(() => {
     const agent = runReplay();
     print({ analytics: agent.analytics(), signals: agent.allSignals() });
   });
 
-program
-  .command("audit-export")
+const audit = program.command("audit").description("Audit commands");
+audit
+  .command("export")
   .option("--output <path>", "Output JSON file", "./data/audit.json")
   .description("Run replay and export the sanitized append-only audit log")
   .action(async (options: { output: string }) => {
@@ -95,6 +103,15 @@ program
     await mkdir(dirname(output), { recursive: true });
     await writeFile(output, agent.exportAudit(), "utf8");
     print({ output, events: agent.audit().length });
+  });
+
+const telegram = program.command("telegram").description("Telegram feature-flag helpers");
+telegram
+  .command("preview <command>")
+  .description("Render a Telegram command reply without contacting Telegram")
+  .action((command: string) => {
+    const agent = runReplay();
+    print({ reply: agent.telegramCommand(command) });
   });
 
 function runReplay(): SentinelAgent {

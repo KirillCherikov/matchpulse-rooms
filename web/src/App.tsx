@@ -33,8 +33,8 @@ function Dashboard(): JSX.Element {
 
   const refresh = useCallback(async () => {
     try {
-      const [status, signals, alerts, positions, analytics, audit] = await Promise.all([
-        get<AgentStatus>("/api/agent/status"),
+      const status = await get<AgentStatus>("/api/agent/status");
+      const [signals, alerts, positions, analytics, audit] = await Promise.all([
         get<{ signals: Signal[] }>("/api/signals"),
         get<{ alerts: OperationalAlert[] }>("/api/alerts"),
         get<{ positions: PaperPosition[] }>("/api/positions"),
@@ -90,8 +90,8 @@ function Dashboard(): JSX.Element {
   const replay = status?.replay;
   const latestSignal = status?.latestSignal;
   const latestOdds = status?.latestOdds;
-  const latestEvent = status?.latestEvent;
-  const feedSeverity = mostSevere(data.alerts);
+  const latestEvent = status?.latestConfirmedEvent;
+  const feedHealth = status?.feedHealth.status ?? "unknown";
   const latestMovement = latestSignal?.movement;
   const modeLabel = status?.mode?.toUpperCase() ?? "CONNECTING";
 
@@ -139,12 +139,18 @@ function Dashboard(): JSX.Element {
         />
         <MetricCard
           label="Feed health"
-          value={feedSeverity ? feedSeverity.toUpperCase() : "HEALTHY"}
-          detail={data.alerts.at(-1)?.message ?? "No active operational warning"}
+          value={feedHealth.toUpperCase()}
+          detail={
+            feedHealth === "degraded"
+              ? "At least one feed is currently stale"
+              : feedHealth === "healthy"
+                ? "Score and odds feeds are currently healthy"
+                : "Waiting for both feeds"
+          }
           tone={
-            feedSeverity === "critical"
+            feedHealth === "degraded"
               ? "negative"
-              : feedSeverity === "warning"
+              : feedHealth === "unknown"
                 ? "warning"
                 : "positive"
           }
@@ -228,17 +234,17 @@ function Dashboard(): JSX.Element {
             </div>
             <div>
               <dt>Overround</dt>
-              <dd>{latestOdds ? percent(latestOdds.overround - 1) : "—"}</dd>
+              <dd>{latestOdds ? percent(latestOdds.overround) : "—"}</dd>
             </div>
             <div>
-              <dt>Confidence</dt>
-              <dd>{latestSignal ? percent(latestSignal.confidence) : "—"}</dd>
+              <dt>Rule-based confidence score</dt>
+              <dd>{latestSignal ? percent(latestSignal.ruleBasedConfidenceScore) : "—"}</dd>
             </div>
           </dl>
         </article>
 
         <article className="panel">
-          <p className="panel-kicker">Confirmed match event</p>
+          <p className="panel-kicker">Latest confirmed match event</p>
           <h2>
             {latestEvent
               ? `${latestEvent.type.replaceAll("_", " ")} · ${latestEvent.minute}'`
@@ -296,9 +302,14 @@ function Dashboard(): JSX.Element {
           detail="Strict simulated risk cap"
         />
         <MetricCard
-          label="Accuracy"
+          label="Paper win rate"
+          value={percent(data.analytics?.winRate)}
+          detail={`${data.analytics?.settledPositions ?? 0} settled paper positions`}
+        />
+        <MetricCard
+          label="Signal persistence (60s)"
           value={percent(data.analytics?.signalPrecision)}
-          detail={`${data.analytics?.settledPositions ?? 0} settled positions`}
+          detail="Observed counterfactual horizon"
         />
         <MetricCard
           label="Maximum drawdown"
@@ -410,8 +421,8 @@ function SignalDetail({ id }: { id: string }): JSX.Element {
               </dd>
             </div>
             <div>
-              <dt>Confidence</dt>
-              <dd>{percent(signal.confidence)}</dd>
+              <dt>Rule-based confidence score</dt>
+              <dd>{percent(signal.ruleBasedConfidenceScore)}</dd>
             </div>
             <div>
               <dt>Latency</dt>
@@ -427,7 +438,7 @@ function SignalDetail({ id }: { id: string }): JSX.Element {
           <p className="panel-kicker">Correlation</p>
           <h2>
             {signal.correlatedEvent
-              ? `${signal.correlatedEvent.event.type.replaceAll("_", " ")} at ${signal.correlatedEvent.event.minute}'`
+              ? `${signal.correlatedEvent.event.type.replaceAll("_", " ")} at ${signal.correlatedEvent.event.minute}' · ${signal.correlatedEvent.relationship.replaceAll("_", " ")}`
               : "Unexplained market movement"}
           </h2>
           <p className="subtle">{signal.explanation.dataQuality}</p>
@@ -440,16 +451,28 @@ function SignalDetail({ id }: { id: string }): JSX.Element {
         <article className="panel">
           <p className="panel-kicker">Counterfactual</p>
           <h2>
-            {signal.counterfactual.movementPersisted === true
-              ? "Movement persisted"
-              : signal.counterfactual.movementPersisted === false
-                ? "Movement reversed"
-                : "Awaiting horizon"}
+            {signal.counterfactual.movementAssessment
+              ? `Movement ${signal.counterfactual.movementAssessment}`
+              : "Awaiting 60-second horizon"}
           </h2>
           <p>Immediate entry: {signal.counterfactual.immediateEntryOdds.toFixed(2)}</p>
           <p>
             Confirmation entry: {signal.counterfactual.confirmationEntryOdds?.toFixed(2) ?? "—"}
           </p>
+          <p>Entry comparison: {signal.counterfactual.betterEntry?.replaceAll("_", " ") ?? "—"}</p>
+          <p className="subtle">
+            Settled unit returns: immediate {formatReturn(signal.counterfactual.immediateReturn)} ·
+            confirmation {formatReturn(signal.counterfactual.confirmationReturn)}
+          </p>
+          <div className="horizon-list">
+            {signal.counterfactual.horizons.map((point) => (
+              <p key={point.horizonSeconds}>
+                <strong>{point.horizonSeconds}s</strong> {point.classification} · retained{" "}
+                {(point.retainedMovementRatio * 100).toFixed(0)}% · lag{" "}
+                {point.observationLagSeconds.toFixed(0)}s
+              </p>
+            ))}
+          </div>
         </article>
       </section>
       <section className="panel timeline-panel">
@@ -557,6 +580,9 @@ function formatSigned(value: number): string {
 function formatSelection(value: Signal["selection"]): string {
   return value === "home" ? "Home win" : value === "away" ? "Away win" : "Draw";
 }
+function formatReturn(value: number | undefined): string {
+  return value === undefined ? "—" : `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
+}
 function time(value: string): string {
   return new Date(value).toLocaleTimeString([], {
     hour: "2-digit",
@@ -567,11 +593,4 @@ function time(value: string): string {
 }
 function message(error: unknown): string {
   return error instanceof Error ? error.message : "Unexpected error";
-}
-function mostSevere(alerts: OperationalAlert[]): "warning" | "critical" | undefined {
-  return alerts.some((alert) => alert.severity === "critical")
-    ? "critical"
-    : alerts.some((alert) => alert.severity === "warning")
-      ? "warning"
-      : undefined;
 }

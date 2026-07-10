@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MAX_DECIMAL_ODDS, MAX_EXTERNAL_IDENTIFIER_LENGTH } from "./constraints.js";
 
 export const selectionSchema = z.enum(["home", "draw", "away"]);
 export const matchEventTypeSchema = z.enum([
@@ -16,11 +17,23 @@ export const matchEventTypeSchema = z.enum([
 ]);
 
 const timestampSchema = z.string().datetime({ offset: true });
+const rawReferenceSchema = z
+  .string()
+  .min(1)
+  .max(256)
+  .regex(
+    /^(?:synthetic|test|txline|sha256):[A-Za-z0-9._~:/-]+$/,
+    "Raw references must be sanitized identifiers without queries, fragments, or credentials"
+  )
+  .refine(
+    (value) => !/(?:authorization|bearer|jwt|token|secret|private[-_]?key)/i.test(value),
+    "Raw references must not contain credential-related material"
+  );
 
 export const oddsUpdateSchema = z.object({
   kind: z.literal("odds"),
-  id: z.string().min(1),
-  fixtureId: z.string().min(1),
+  id: z.string().min(1).max(MAX_EXTERNAL_IDENTIFIER_LENGTH),
+  fixtureId: z.string().min(1).max(MAX_EXTERNAL_IDENTIFIER_LENGTH),
   market: z.literal("match_winner"),
   sequence: z.number().int().nonnegative(),
   sourceTimestamp: timestampSchema,
@@ -29,7 +42,7 @@ export const oddsUpdateSchema = z.object({
     .array(
       z.object({
         selection: selectionSchema,
-        decimalOdds: z.number().finite().gt(1)
+        decimalOdds: z.number().finite().gt(1).lte(MAX_DECIMAL_ODDS)
       })
     )
     .length(3)
@@ -39,13 +52,13 @@ export const oddsUpdateSchema = z.object({
         context.addIssue({ code: z.ZodIssueCode.custom, message: "Selections must be unique" });
       }
     }),
-  rawReference: z.string().min(1)
+  rawReference: rawReferenceSchema
 });
 
 export const matchEventSchema = z.object({
   kind: z.literal("score"),
-  id: z.string().min(1),
-  fixtureId: z.string().min(1),
+  id: z.string().min(1).max(MAX_EXTERNAL_IDENTIFIER_LENGTH),
+  fixtureId: z.string().min(1).max(MAX_EXTERNAL_IDENTIFIER_LENGTH),
   sequence: z.number().int().nonnegative(),
   sourceTimestamp: timestampSchema,
   receivedTimestamp: timestampSchema,
@@ -54,7 +67,7 @@ export const matchEventSchema = z.object({
   team: z.enum(["home", "away"]).optional(),
   score: z.object({ home: z.number().int().min(0), away: z.number().int().min(0) }).optional(),
   confirmed: z.boolean(),
-  rawReference: z.string().min(1)
+  rawReference: rawReferenceSchema
 });
 
 export const providerMessageSchema = z.discriminatedUnion("kind", [
