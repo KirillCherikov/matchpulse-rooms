@@ -1,0 +1,15 @@
+{
+  "label": "Synthetic demo data — not a real match",
+  "kind": "score",
+  "id": "score-goal-002",
+  "fixtureId": "synthetic-world-cup-demo-001",
+  "sequence": 2,
+  "sourceTimestamp": "2026-06-14T12:01:00.000Z",
+  "receivedTimestamp": "2026-06-14T12:01:00.000Z",
+  "type": "goal",
+  "minute": 63,
+  "team": "home",
+  "score": { "home": 1, "away": 0 },
+  "confirmed": true,
+  "rawReference": "synthetic://score/goal-002"
+}
