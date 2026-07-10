@@ -1,0 +1,18 @@
+services:
+  - type: web
+    name: txline-sentinel
+    runtime: docker
+    plan: free
+    autoDeployTrigger: checksPass
+    healthCheckPath: /health
+    envVars:
+      - key: SENTINEL_MODE
+        value: replay
+      - key: TELEGRAM_ENABLED
+        value: "false"
+      - key: LOG_LEVEL
+        value: info
+      - key: SESSION_COOKIE_SECURE
+        value: "true"
+      - key: NODE_ENV
+        value: production

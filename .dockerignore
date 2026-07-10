@@ -3,7 +3,13 @@ dist
 web/dist
 .git
 .env*
+*.key
+*.pem
+*wallet*.json
+secrets/
+credentials/
 data/*.db
+data/audit*.json
 coverage
 playwright-report
 test-results
