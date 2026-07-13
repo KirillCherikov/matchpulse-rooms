@@ -5,7 +5,15 @@ import prettier from "eslint-config-prettier";
 
 export default tseslint.config(
   {
-    ignores: ["dist/**", "web/dist/**", "node_modules/**", "coverage/**", "playwright-report/**"]
+    ignores: [
+      "dist/**",
+      "web/dist/**",
+      "node_modules/**",
+      "coverage/**",
+      "playwright-report/**",
+      "vendor/txline/devnet/idl/txoracle.json",
+      "vendor/txline/devnet/types/txoracle.ts"
+    ]
   },
   js.configs.recommended,
   ...tseslint.configs.recommended,

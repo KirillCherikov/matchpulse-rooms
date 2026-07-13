@@ -1,0 +1,27 @@
+{
+  "sourceRepository": "https://github.com/txodds/tx-on-chain.git",
+  "commit": "9b2de4c30cf0f4e01c88d73c365543276d065cf2",
+  "license": "Apache-2.0",
+  "programId": "6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J",
+  "txlMint": "4Zao8ocPhmMgq7PdsYWyxvqySMGx7xb9cMftPMkEokRG",
+  "idlVersion": "1.5.6",
+  "apiOpenApiVersion": "1.5.6",
+  "openApi": {
+    "url": "https://txline.txodds.com/docs/docs.yaml",
+    "sha256": "41e18335a91f7a18eb7a173c2765a0c5450ba77754f491c343419e1ca25f1e9e"
+  },
+  "apiOrigin": "https://txline-dev.txodds.com",
+  "rpcUrl": "https://api.devnet.solana.com",
+  "idl": {
+    "path": "examples/devnet/idl/txoracle.json",
+    "sha256": "1e7d55726eda9ad4d6ef62910fe5d7e007c687f4ff8b1c771a42b69b7089724e"
+  },
+  "generatedTypes": {
+    "path": "examples/devnet/types/txoracle.ts",
+    "sha256": "1833b1137d3a4e249d7024df0393f760bfdab695ffeed9c1049134fd4eeb9889"
+  },
+  "tokenPrograms": {
+    "token2022": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+    "associatedToken": "ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL"
+  }
+}
