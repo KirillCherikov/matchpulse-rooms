@@ -4,7 +4,11 @@
 
 `OddsUpdate` contains a fixture ID, market, independent odds-feed sequence, source and received timestamps, three decimal selections, and a sanitized raw reference. `MatchEvent` carries the score-feed sequence, both timestamps, event type, minute, confirmation state, optional team, optional score, and sanitized reference.
 
-The strategy does not consume raw HTTP response types. A live transport must validate an official payload and map it to these models before ingestion.
+The strategy does not consume raw HTTP response types. The live transport validates official payloads first and maps only explicit compatible fields into these models.
+
+The official odds payload's integer `Prices` are represented separately as validated retained TxLINE records. They are deliberately not converted into `OddsUpdate.decimalOdds`: no undocumented price scale or market mapping is invented. Live timestamps and raw references can therefore be shown while the decimal-odds decision pipeline remains fail closed.
+
+Fixture mapping preserves the official fixture ID, feed-designated participant order/home flag, source timestamp, local receipt timestamp, and scheduled/cancelled state. Confirmed score records map only when exactly one supported soccer flag, a minute, and unambiguous participant/score fields are present. Unsupported actions remain validated retained records rather than synthetic events.
 
 ## Time semantics
 

@@ -29,25 +29,25 @@ TxLINE Sentinel validates transport-independent inputs, separates book percentag
 ## Architecture
 
 ```text
-Replay / Mock / future verified official live transport
-                       |
-                 Zod validation
-                       |
-          Transport-independent domain models
-                       |
-          +------------+-------------+
-          |                          |
-  Data-quality sentinel      Causal event correlator
-          |                          |
-          +------------+-------------+
-                       |
-          Odds + explainable signal engine
-                       |
-        Paper simulation + counterfactuals
-                       |
-             Append-only audit trail
-                       |
-       REST/OpenAPI / CLI / dashboard / Telegram
+Official TxLINE devnet HTTP/SSE       Synthetic Replay / Mock
+              |                                |
+   strict raw Zod contracts              domain Zod contract
+              |                                |
+  read-only LIVE status       transport-independent decision models
+              |                                |
+              |                 +--------------+--------------+
+              |                 |                             |
+              |        Data-quality sentinel        Causal correlator
+              |                 |                             |
+              |                 +--------------+--------------+
+              |                                |
+              |              Explainable signal engine
+              |                                |
+              |          Paper simulation + counterfactuals
+              |                                |
+              +---------------------+----------+
+                                    |
+                    REST/OpenAPI / dashboard / audit
 ```
 
 The strategy and simulation layers do not depend on raw HTTP schemas. See [Architecture](docs/ARCHITECTURE.md) and [Data model](docs/DATA_MODEL.md).
@@ -78,26 +78,28 @@ Public replay deployment:
 - Dashboard: <https://txline-sentinel.onrender.com>
 - OpenAPI: <https://txline-sentinel.onrender.com/docs>
 - Health: <https://txline-sentinel.onrender.com/health>
+- Live status (after live deployment): <https://txline-sentinel.onrender.com/api/live/status>
 
 ## Environment variables
 
 Copy `.env.example` to `.env.local` only when local overrides are needed. Never commit `.env.local`.
 
-| Variable                 | Default or status                        | Purpose                                                                                                      |
-| ------------------------ | ---------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| `SENTINEL_MODE`          | `replay`                                 | `replay`, `mock`, or `live` provider selection.                                                              |
-| `PORT`                   | `3000`                                   | Unified server port.                                                                                         |
-| `HOST`                   | `0.0.0.0`                                | Listen address.                                                                                              |
-| `LOG_LEVEL`              | `info`                                   | Fastify structured-log level.                                                                                |
-| `CORS_ORIGIN`            | unset                                    | Optional exact origin for stateless browser API access; the stateful dashboard remains same-origin.          |
-| `SESSION_COOKIE_SECURE`  | `false`                                  | Add the `Secure` flag to replay-session cookies; enabled by the HTTPS deployment profile.                    |
-| `TXLINE_NETWORK`         | `devnet`                                 | Future verified live network selection.                                                                      |
-| `TXLINE_API_ORIGIN`      | official devnet origin in `.env.example` | Origin only; the current live adapter makes no network call.                                                 |
-| `TXLINE_GUEST_JWT`       | unset                                    | Optional runtime secret; replay does not need it.                                                            |
-| `TXLINE_API_TOKEN`       | unset                                    | Optional runtime secret; replay does not need it.                                                            |
-| `TELEGRAM_ENABLED`       | `false`                                  | Enables outbound notifications only for trusted fixed/live runtimes; anonymous replay sessions force it off. |
-| `TELEGRAM_BOT_TOKEN`     | unset                                    | Runtime-only Telegram secret.                                                                                |
-| `TELEGRAM_ALERT_CHAT_ID` | unset                                    | Outbound alert destination.                                                                                  |
+| Variable                 | Default or status               | Purpose                                                                                                      |
+| ------------------------ | ------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `SENTINEL_MODE`          | `replay`                        | Decision provider selection; remains `replay` when the independent live sidecar is enabled.                  |
+| `PORT`                   | `3000`                          | Unified server port.                                                                                         |
+| `HOST`                   | `0.0.0.0`                       | Listen address.                                                                                              |
+| `LOG_LEVEL`              | `info`                          | Fastify structured-log level.                                                                                |
+| `CORS_ORIGIN`            | unset                           | Optional exact origin for stateless browser API access; the stateful dashboard remains same-origin.          |
+| `SESSION_COOKIE_SECURE`  | `false`                         | Add the `Secure` flag to replay-session cookies; enabled by the HTTPS deployment profile.                    |
+| `TXLINE_NETWORK`         | `devnet`                        | Live mode is fail-closed to Solana devnet.                                                                   |
+| `TXLINE_API_ORIGIN`      | `https://txline-dev.txodds.com` | Exact official devnet HTTPS origin.                                                                          |
+| `TXLINE_GUEST_JWT`       | unset                           | Runtime-only guest credential; automatically renewed in memory after HTTP 401.                               |
+| `TXLINE_API_TOKEN`       | unset                           | Runtime-only activated subscription token.                                                                   |
+| `TXLINE_LIVE_ENABLED`    | `false`                         | Starts the process-wide read-only devnet HTTP/SSE sidecar when both credentials are present.                 |
+| `TELEGRAM_ENABLED`       | `false`                         | Enables outbound notifications only for trusted fixed/live runtimes; anonymous replay sessions force it off. |
+| `TELEGRAM_BOT_TOKEN`     | unset                           | Runtime-only Telegram secret.                                                                                |
+| `TELEGRAM_ALERT_CHAT_ID` | unset                           | Outbound alert destination.                                                                                  |
 
 ## Odds terminology
 
@@ -127,13 +129,13 @@ Replay messages are processed in nondecreasing received-time order. The recorded
 
 ## REST API
 
-| Method | Path                                                                     |
-| ------ | ------------------------------------------------------------------------ |
-| GET    | `/health`, `/ready`                                                      |
-| GET    | `/api/agent/status`, `/api/fixtures`, `/api/signals`, `/api/signals/:id` |
-| GET    | `/api/alerts`, `/api/positions`, `/api/analytics`, `/api/audit`          |
-| POST   | `/api/replay/start`, `/api/replay/pause`, `/api/replay/resume`           |
-| POST   | `/api/replay/reset`, `/api/replay/advance`                               |
+| Method | Path                                                                                         |
+| ------ | -------------------------------------------------------------------------------------------- |
+| GET    | `/health`, `/ready`                                                                          |
+| GET    | `/api/agent/status`, `/api/live/status`, `/api/fixtures`, `/api/signals`, `/api/signals/:id` |
+| GET    | `/api/alerts`, `/api/positions`, `/api/analytics`, `/api/audit`                              |
+| POST   | `/api/replay/start`, `/api/replay/pause`, `/api/replay/resume`                               |
+| POST   | `/api/replay/reset`, `/api/replay/advance`                                                   |
 
 Fastify schemas describe request, response, and error contracts in OpenAPI. Replay state is isolated by an opaque HttpOnly session cookie in a bounded, in-memory registry; it is still anonymous and non-durable. See [API](docs/API.md).
 
@@ -151,11 +153,11 @@ npm run cli -- audit export --output ./data/audit.json
 npm run cli -- telegram preview /status
 ```
 
-`replay run`, `signals list`, `alerts list`, `backtest run`, and `audit export` are deterministic one-shot local evaluations. `replay start` prints the initial state of an ephemeral CLI process; use the dashboard or REST API for a continuing interactive replay session. `txline check` reports the intentionally unavailable live adapter until an official transport is activated. See [CLI](docs/CLI.md).
+`replay run`, `signals list`, `alerts list`, `backtest run`, and `audit export` are deterministic one-shot local evaluations. `replay start` prints the initial state of an ephemeral CLI process; use the dashboard or REST API for a continuing interactive replay session. `txline check` is a configuration-level provider check; use `/api/live/status` for the running HTTP/SSE sidecar. Pinned activation, smoke, and proof helpers are available through `npm run txline:devnet -- ...`. See [CLI](docs/CLI.md).
 
 ## Dashboard
 
-The dark operations dashboard shows mode and replay state, fixture and score, current per-feed health, latest latency and movement, latest confirmed match event, Rule-based confidence score, explanation, operational alerts, virtual positions, virtual P&L, signal precision, drawdown, replay controls, and the audit timeline. A signal detail screen exposes causal relationship, signed score contributions, strategy configuration version, and counterfactual evidence.
+The dark operations dashboard has an explicit **LIVE DEVNET TXLINE / SYNTHETIC REPLAY** switch. Live shows connection/authentication, network, latest real fixture, odds/score timestamps, stream heartbeat/event/reconnect state, and proof status without rendering credentials or raw datasets. Replay retains the complete fixture, feed-health, movement, explanation, paper-position, analytics, controls, and audit walkthrough. A signal detail screen exposes causal relationship, signed score contributions, strategy configuration version, and counterfactual evidence.
 
 ## Telegram
 
@@ -165,15 +167,19 @@ There is currently no Telegram webhook or `getUpdates` receiver, so those comman
 
 ## TxLINE integration
 
-`ReplayTxLineProvider`, `MockTxLineProvider`, and `LiveTxLineProvider` share one provider boundary. Replay is complete and is the judge path. The live provider validates injected domain-shaped messages but intentionally has no network transport yet.
+The official TxLINE devnet path is activated and proven end to end. A disposable public wallet finalized free `subscribe(1,4)` against program `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`; the on-chain service row reported price `0` TxL, sampling interval `0`, league bundle `1`, and market bundle `2`. Guest activation succeeded, an authenticated snapshot returned seven real fixtures including `18143850` (Vietnam–Myanmar), odds SSE delivered a real data event, scores SSE delivered a heartbeat, and an official `validateFixture` read-only simulation returned true.
 
-**TxLINE data endpoints currently called: none.** No endpoint path, authentication header, program ID, IDL, token mint, or response schema is fabricated. Live activation awaits verified official credentials, matching artifacts, and pricing checks. See [TxLINE integration](docs/TXLINE_INTEGRATION.md).
+The runtime calls the official devnet fixture/odds/scores snapshots and odds/scores SSE streams with `Authorization: Bearer <guest JWT>` plus `X-Api-Token`. It renews the guest JWT from `/auth/guest/start` on HTTP 401, reconnects with bounded exponential backoff, validates raw payloads before mapping, and redacts credentials from diagnostics. Activation is a one-shot local operation. For each observed fixture, the read-only server verifier automatically fetches a matching proof and runs an unsigned `sigVerify: false` Solana devnet simulation; it contains no wallet, signer, or broadcast method. The separate Anchor `.view()` helper remains available for local reproduction. See [TxLINE integration](docs/TXLINE_INTEGRATION.md).
 
 Official references:
 
 - <https://txline.txodds.com/documentation/quickstart>
 - <https://txline.txodds.com/documentation/worldcup>
-- <https://txline.txodds.com/llms.txt> — documented machine index, currently returning HTTP 404
+- <https://txline.txodds.com/documentation/examples/devnet-examples>
+- <https://txline.txodds.com/documentation/examples/fetching-snapshots>
+- <https://txline.txodds.com/documentation/examples/streaming-data>
+- <https://txline.txodds.com/documentation/examples/onchain-validation>
+- <https://github.com/txodds/tx-on-chain>
 
 ## Quality checks
 
@@ -192,7 +198,7 @@ npm audit
 
 If the required Linux browser libraries are already installed, `npx playwright install chromium` is sufficient.
 
-The audited release checkpoint passes 82 unit/integration tests, 26 dedicated integration tests, the Chromium judge flow, production build, Docker build/smoke, and `npm audit` with zero known vulnerabilities. Do not use `npm audit fix --force`; review advisories for reachability and runtime relevance.
+The release gate covers raw-adapter contracts, malformed payloads, fragmented SSE parsing, heartbeat/idle timeout, retry/backoff, cancellation, JWT renewal, redaction, duplicate/out-of-order handling, live-unavailable behavior, proof classification, mocked HTTP/SSE integration, the LIVE/REPLAY UI, Docker smoke, and the existing replay suite. The final local checkpoint passes 129/129 tests, 35/35 dedicated integration tests, Chromium 3/3, production build, credentialed Docker live/replay smoke, and `npm audit` with zero known vulnerabilities. Do not use `npm audit fix --force`; review advisories for reachability and runtime relevance.
 
 ## Deployment
 
@@ -201,14 +207,16 @@ docker build -t txline-sentinel .
 docker run --rm -p 3000:3000 --env SENTINEL_MODE=replay txline-sentinel
 ```
 
-The image runs as a non-root user and includes a `/health` check. The replay build is deployed at <https://txline-sentinel.onrender.com>. Until durable session coordination is implemented, keep the judge deployment at one replica. See [Deployment](docs/DEPLOYMENT.md), [Judge guide](docs/JUDGE_GUIDE.md), and [Demo script](docs/DEMO_SCRIPT.md).
+The image runs as a non-root user and includes a `/health` check. The currently verified public service at <https://txline-sentinel.onrender.com> remains the replay deployment until the live integration commit and required Render environment changes are independently verified. Keep one replica until durable session coordination exists. See [Deployment](docs/DEPLOYMENT.md), [Judge guide](docs/JUDGE_GUIDE.md), and [Demo script](docs/DEMO_SCRIPT.md).
 
-A judge-safe Render Blueprint is provided in `render.yaml`. The public service runs in replay mode with Telegram disabled and no TxLINE credentials.
+`render.yaml` declares the exact devnet variable names while leaving both credentials unset. The wallet/keypair is never a runtime or Render secret. Manual secret entry, deployment of the latest successful commit, and public `/api/live/status` verification remain pending; this README does not claim they have already happened.
 
 ## Honest limitations
 
 - The bundled fixture is synthetic and is never represented as a real match.
-- No live TxLINE endpoint is called yet; the adapter is a validated boundary, not a completed transport.
+- A covered live match is not guaranteed at demo time; a connected heartbeat-only SSE stream is honestly shown as awaiting data.
+- Official TxLINE odds `Prices` are preserved as integers because no decimal conversion scale is invented; the live sidecar therefore does not open paper positions.
+- Live TxLINE is a read-only, process-wide observation sidecar; deterministic replay remains the guaranteed decision/settlement path.
 - State and audit records are in memory and are lost on process restart.
 - Replay sessions are isolated in one process but remain anonymous, memory-only, bounded, and unsuitable for horizontal scaling without shared storage.
 - Replay speed controls event cadence rather than reproducing original inter-arrival delays.
@@ -216,16 +224,16 @@ A judge-safe Render Blueprint is provided in `render.yaml`. The public service r
 - Signal precision is a 60-second movement-persistence metric, not proof of predictive profitability.
 - The Rule-based confidence score is a deterministic heuristic, not a calibrated probability or guarantee.
 - Telegram supports outbound alerts and local command rendering, but no inbound bot receiver.
-- Live TxLINE credentials/transport and a demo video remain pending external authorization or production work.
+- Render secret entry/latest live deployment and the demo video remain external submission steps.
 
 ## Judge walkthrough
 
-1. Open the dashboard and verify both the synthetic-data label and simulation disclaimer.
-2. Click **Reset**, then **Next event** five times.
-3. Inspect the confirmed-event movement, score components, explanation, and virtual position.
-4. Continue to the duplicate, stale, gap, out-of-order, delayed, and recovery alerts.
-5. Select 10x and click **Start** to finish settlement.
-6. Inspect virtual P&L, signal precision, drawdown, counterfactual horizons, and audit records.
+1. Select **LIVE DEVNET TXLINE** and show authenticated devnet, a real fixture, both SSE states, and honest proof status.
+2. Open `/api/live/status` and the public finalized devnet subscription transaction without exposing credentials.
+3. Switch to **SYNTHETIC REPLAY** and verify both the synthetic-data label and simulation disclaimer.
+4. Reset, advance five events, and inspect the causal movement, score components, explanation, and virtual position.
+5. Continue to duplicate, stale, gap, out-of-order, delayed, and recovery alerts.
+6. Select 10x, finish settlement, and inspect virtual P&L, persistence, drawdown, counterfactuals, and audit.
 7. Open `/docs` for the REST contract.
 
 ## Documentation
@@ -238,6 +246,8 @@ A judge-safe Render Blueprint is provided in `render.yaml`. The public service r
 - [Replay](docs/REPLAY.md)
 - [Security](docs/SECURITY.md)
 - [Submission draft](docs/SUBMISSION.md)
+- [Final submission copy](docs/FINAL_SUBMISSION.md)
+- [Submission checklist](docs/SUBMISSION_CHECKLIST.md)
 
 ## License
 

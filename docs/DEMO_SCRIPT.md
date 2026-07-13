@@ -1,82 +1,101 @@
-# Five-minute demo script
+# Sub-five-minute demo script
 
-## 0:00–0:25 — Problem
+Target an encoded runtime of **4:40** (acceptable rehearsal range **4:30–4:45**) so upload/transitions cannot push the entry over the hard five-minute limit. The final exported file must be strictly shorter than `5:00`; verify its actual duration before submission.
 
-“A price movement is not enough. Market operations teams need to know what changed, whether an event available at decision time explains it, whether the feed is trustworthy, and whether the decision can be reproduced.”
+## 0:00–0:18 — Product and safety boundary
 
-Show `SIMULATION ONLY — NO REAL MONEY` and the synthetic-data label.
+“TxLINE Sentinel turns verifiable sports data into explainable market-operations evidence and a reproducible simulation-only decision trail.”
 
-## 0:25–0:55 — Architecture
+Show **SIMULATION ONLY — NO REAL MONEY**. State that the product has no bookmaker execution, wallet custody, deposit, withdrawal, or profit promise.
 
-Show the README diagram: provider → Zod validation → normalized domain models → data quality and causal correlation → explainable signal → paper simulation and counterfactuals → audit/API/dashboard.
+## 0:18–1:18 — LIVE DEVNET TXLINE
 
-Narration: “Book percentage is the sum of implied probabilities; classical overround is that sum minus one. Normalized values are market comparisons, not claimed true probabilities.”
+Open <https://txline-sentinel.onrender.com> and select **LIVE DEVNET TXLINE**.
 
-## 0:55–2:20 — Causal event-confirmed movement
+Show:
 
-Open <https://txline-sentinel.onrender.com>. Click **Reset**, then **Next event** five times.
+- network **SOLANA DEVNET**;
+- authenticated TxLINE API state;
+- odds and scores stream status, heartbeat/event time, and reconnect attempt;
+- latest real fixture and provider timestamps;
+- `Verified`, `Verification failed`, or `Verification unavailable` without overstating the evidence.
+
+Narration:
+
+“This is the official devnet origin with a free on-chain subscription. Service level 1 was read from the pricing matrix at zero TxL, and `subscribe(1,4)` finalized from our disposable devnet wallet. The authenticated smoke returned seven real fixtures, including fixture 18143850, Vietnam–Myanmar. Odds SSE delivered a real event; scores SSE opened and delivered a heartbeat. A heartbeat-only stream is connected and awaiting covered data, not a fabricated live match.”
+
+Briefly show the public [devnet transaction](https://explorer.solana.com/tx/2oxcjpbnGZFaw2R2Sk4ptc7dJ5Y6tPNRfJXzc6sZFEY66h1FPsvGkGyqYQigdPmDBgYM2RJCEtdjzaHxHNrXabdj?cluster=devnet) and `/api/live/status`.
+
+“The proof flow fetched official fixture proof data, derived the devnet root PDA, and `validateFixture` returned true in read-only simulation. The UI never marks a record Verified merely because HTTP succeeded.”
+
+Do not open developer tools containing request headers, local credential files, wallet JSON, raw third-party datasets, or Render secret values.
+
+## 1:18–1:35 — Architecture
+
+Show the README diagram.
+
+“The authenticated TxLINE sidecar and deterministic replay are separated. Official payloads pass strict Zod schemas and adapters. Live is read-only decision support; replay guarantees the same signal and settlement walkthrough even between matches.”
+
+Mention the deliberate odds boundary: TxLINE integer `Prices` are retained exactly; Sentinel does not invent a decimal scale or use them for a paper position without an official conversion contract.
+
+## 1:35–2:40 — SYNTHETIC REPLAY signal
+
+Switch to **SYNTHETIC REPLAY**. Confirm `Synthetic demo data — not a real match`, then click **Reset** and **Next event** five times.
 
 Show:
 
 - confirmed home goal;
 - normalized Home win movement and velocity;
 - `post_event_reaction` relationship;
-- Rule-based confidence score and component reasons;
-- simulated confirmation position.
+- Rule-based confidence score and signed component reasons;
+- risk-capped virtual position.
 
-Narration: “The correlator requires the event source to precede the odds source and the confirmation to be received by decision time. A late confirmation can be context, but cannot open this strategy.”
+Narration:
 
-## 2:20–3:00 — Data quality
+“The correlator requires the event source to precede the odds source and the confirmation to be received by decision time. A late confirmation can be context, but cannot open this strategy. Book percentage is the sum of implied probabilities; classical overround is that sum minus one.”
 
-Advance through duplicate, gap, stale, out-of-order, delayed, divergence, and recovery inputs. Show that operational alerts remain separate from signals and current health becomes healthy again after recovery.
+## 2:40–3:06 — Data quality and recovery
 
-## 3:00–3:40 — Counterfactual explanation
+Advance through duplicate, gap, stale, out-of-order, delayed, divergence, and recovery inputs. Show that operational alerts remain separate from signals and current health returns to healthy while history remains auditable.
 
-Open signal detail. Show the triggered rules, causal event relationship, source/received latency, and 30/60/300-second retained-movement ratios.
+## 3:06–3:32 — Counterfactual explanation
 
-Narration: “A small retracement is not called a reversal. Persisted means at least 60% remains; reversal requires the initial move to be fully lost.”
+Open signal detail. Show causal source/received timing and 30/60/300-second retained-movement ratios.
 
-## 3:40–4:15 — Settlement and analytics
+“A small retracement is not called a reversal. Persisted means at least 60% remains; reversal requires the initial move to be fully lost.”
 
-Choose 10x and click **Start**. Show confirmed full-time paper settlement, virtual P&L, open exposure returning to zero, signal precision, and maximum settled-equity drawdown.
+## 3:32–4:00 — Paper settlement
 
-State clearly that these are virtual units and not evidence of profitability.
+Choose 10x and click **Start**. Show confirmed full-time settlement, virtual P&L, exposure returning to zero, signal precision, and maximum settled-equity drawdown.
 
-## 4:15–4:40 — Auditability and restart
+“These are virtual units for evaluation. This is not evidence or a promise of profitability.”
 
-Show audit timeline and `/docs`. Explain that inputs, normalized records, alerts, score components, decision, paper execution, counterfactual points, and settlement share correlation IDs and a run ID. Starting another finished replay clears dynamic state while retaining prior append-only audit history.
+## 4:00–4:40 — Audit and closing
 
-## 4:40–5:00 — TxLINE and honest status
+Show the audit timeline and `/docs`.
 
-“Replay makes the complete decision system judgeable now at the public Render URL. The provider boundary is ready for official TxLINE schemas, but the current build calls no TxLINE data endpoint and performs no transaction.”
+“Inputs, sanitized references, normalized records, alerts, score components, decisions, paper execution, counterfactual points, and settlement share run-scoped correlation IDs. Live proves the official TxLINE integration; replay makes the decision logic deterministic and judgeable on demand.”
 
-Mention [API feedback](API_FEEDBACK.md).
+Close on three points:
+
+1. real authenticated TxLINE devnet HTTP/SSE;
+2. actual on-chain proof verification rather than a decorative badge;
+3. explainable, auditable simulation without a real-money execution path.
 
 ## Exact click sequence
 
-1. Reset.
-2. Next event ×5.
-3. Inspect signal and position.
-4. Next event until data-quality alerts are visible.
-5. Open signal detail and return.
-6. Select 10x.
-7. Start.
-8. Inspect settlement, analytics, and audit.
-9. Open `/docs` in a second tab.
+1. LIVE DEVNET TXLINE.
+2. Inspect API, fixture, streams, and proof status.
+3. Open `/api/live/status` or the devnet transaction in a second tab.
+4. SYNTHETIC REPLAY.
+5. Reset.
+6. Next event ×5.
+7. Inspect signal and position.
+8. Advance until data-quality alerts are visible.
+9. Open signal detail and return.
+10. Select 10x and Start.
+11. Inspect settlement, analytics, audit, and `/docs`.
 
-## Backup terminal flow
+## Backup flow
 
-Terminal A — build and keep the server running:
-
-```bash
-npm run build
-npm start
-```
-
-Terminal B — run an independent deterministic CLI evaluation:
-
-```bash
-npm run cli -- replay run
-```
-
-If the public deployment is temporarily unavailable, run the Docker flow from `DEPLOYMENT.md` and record localhost in the demo. If the browser flow fails, show CLI replay JSON and OpenAPI using the same deterministic fixture.
+If Render is temporarily unavailable, run the Docker flow in [DEPLOYMENT.md](DEPLOYMENT.md). If TxLINE has no active covered match, show the authenticated fixture snapshot and stream heartbeat, then use deterministic replay for the guaranteed event/signal/settlement sequence. Never relabel synthetic replay as a real match.

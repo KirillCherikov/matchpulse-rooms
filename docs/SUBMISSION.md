@@ -21,7 +21,8 @@ Odds movement alone is insufficient for professional market operations. Teams ne
 ## Solution and technical highlights
 
 - Transport-independent Replay, Mock, and Live provider architecture.
-- Zod validation before live normalization.
+- Authenticated official TxLINE devnet snapshots and dual SSE streams with strict Zod validation before adaptation.
+- Pinned devnet program/IDL/types, zero-TxL `subscribe(1,4)`, guest activation, JWT renewal, and actual `validateFixture` read-only simulation.
 - Explicit book percentage, classical overround, proportional margin removal, movement, velocity, acceleration, and rolling baseline.
 - Causal confirmed-event correlation with separate post-event and late-confirmation relationships and no look-ahead.
 - Separate stale, duplicate-ID, duplicate-sequence, out-of-order, gap, delay, invalid-timestamp, terminal-event rejection, divergence, and recovery sentinel.
@@ -33,9 +34,11 @@ Odds movement alone is insufficient for professional market operations. Teams ne
 
 ## TxLINE use
 
-Replay mode is the complete judge path. `ReplayTxLineProvider`, `MockTxLineProvider`, and a Zod-validating `LiveTxLineProvider` share the strategy boundary.
+The real integration uses the official devnet fixture/odds/scores snapshots, odds/scores SSE, guest-session renewal, token activation, fixture updates, and fixture-validation endpoint categories. Data calls send the documented guest Bearer JWT plus activated `X-Api-Token`; secrets never enter the browser or Git.
 
-**Exact TxLINE data endpoints used in the current build: none.** Live network usage awaits verified official schemas, credentials, matching devnet artifacts, and safe pricing checks. No endpoint, header, program artifact, or response field is fabricated. Official references are listed in [TXLINE_INTEGRATION.md](TXLINE_INTEGRATION.md).
+Free `subscribe(1,4)` finalized from disposable devnet wallet `78nxT4D9E6iBZUuSRDQ4NDwDFtzcwpQ3FG8gokMfCsfh` against program `6pW64gN1s2uqjHkn1unFeEjAwJkPGHoppGvS715wyP2J`. The authenticated smoke returned seven real fixtures, including `18143850` (Vietnam–Myanmar), an odds SSE data event, and a scores heartbeat. Official `validateFixture` simulation returned true against root account `AzB6fHDNvTThdvQazWvYfgsCbDm6Ksi3zP5BzoxYo5Ri`.
+
+Live is a read-only observation sidecar. Deterministic replay remains the guaranteed explainable signal/paper-settlement path. Official integer odds are preserved without inventing an undocumented decimal scale. Full evidence and endpoint mapping are in [TXLINE_INTEGRATION.md](TXLINE_INTEGRATION.md).
 
 ## Business value
 
@@ -48,18 +51,22 @@ The product targets sports trading operations, sportsbook risk teams, data provi
 - OpenAPI URL: `https://txline-sentinel.onrender.com/docs`
 - Machine-readable OpenAPI: `https://txline-sentinel.onrender.com/docs/json`
 - Status API: `https://txline-sentinel.onrender.com/api/agent/status`
+- Live status after exact-commit Render deployment: `https://txline-sentinel.onrender.com/api/live/status`
+- Devnet subscription: `https://explorer.solana.com/tx/2oxcjpbnGZFaw2R2Sk4ptc7dJ5Y6tPNRfJXzc6sZFEY66h1FPsvGkGyqYQigdPmDBgYM2RJCEtdjzaHxHNrXabdj?cluster=devnet`
 - Demo video: `TBD`
 
 ## Honest limitations
 
 - The bundled replay is synthetic and explicitly labeled.
-- The current build makes no live TxLINE call.
+- Live devnet may be connected but awaiting data when no covered fixture is active.
+- Official integer odds do not enter the decimal-odds paper engine without a published conversion contract.
+- The live sidecar is read-only; it cannot place a bet or mutate replay paper state.
 - State and audit persistence are in memory.
 - Browser replay sessions are isolated in a bounded in-memory registry but remain anonymous and non-durable.
 - The Rule-based confidence score is not statistically calibrated.
 - Signal precision is 60-second movement persistence, not outcome accuracy or proof of profitability.
 - Telegram has trusted-runtime outbound notifications and local renderers but no inbound bot receiver; the public replay deployment keeps delivery disabled.
-- A demo video still requires an external recording/upload action.
+- Render secret entry, exact live-commit deployment verification, and the demo video remain external submission actions.
 
 ## API feedback
 

@@ -8,6 +8,16 @@ services:
     envVars:
       - key: SENTINEL_MODE
         value: replay
+      - key: TXLINE_NETWORK
+        value: devnet
+      - key: TXLINE_API_ORIGIN
+        value: https://txline-dev.txodds.com
+      - key: TXLINE_GUEST_JWT
+        sync: false
+      - key: TXLINE_API_TOKEN
+        sync: false
+      - key: TXLINE_LIVE_ENABLED
+        value: "false"
       - key: TELEGRAM_ENABLED
         value: "false"
       - key: LOG_LEVEL

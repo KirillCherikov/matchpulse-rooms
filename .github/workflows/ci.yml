@@ -24,7 +24,7 @@ jobs:
       - run: npm run typecheck
       - run: npm test
       - run: npm run test:integration
-      - run: npm audit --audit-level=moderate
+      - run: npm audit
       - run: npm run build
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e
@@ -57,6 +57,25 @@ jobs:
             status="$(docker inspect --format '{{.State.Health.Status}}' txline-sentinel-smoke)"
             if [ "$status" = "healthy" ]; then
               curl --fail --silent --show-error http://127.0.0.1:3310/health
+              curl --fail --silent --show-error \
+                --dump-header /tmp/txline-ready.headers \
+                --output /tmp/txline-ready.json \
+                http://127.0.0.1:3310/ready
+              jq --exit-status '.status == "ready" and .ready == true' /tmp/txline-ready.json
+              if grep --ignore-case --quiet '^set-cookie:' /tmp/txline-ready.headers; then
+                echo '/ready unexpectedly allocated a replay session cookie' >&2
+                exit 1
+              fi
+              curl --fail --silent --show-error http://127.0.0.1:3310/api/live/status |
+                jq --exit-status '
+                  .enabled == false and
+                  .connected == false and
+                  .authenticated == false and
+                  .connectionStatus == "disabled" and
+                  .verification.status == "unavailable"
+                '
+              curl --fail --silent --show-error http://127.0.0.1:3310/docs/json |
+                jq --exit-status '.paths["/api/live/status"].get.responses["200"]'
               curl --fail --silent --show-error http://127.0.0.1:3310/api/agent/status |
                 jq --exit-status '.mode == "replay" and .disclaimer == "SIMULATION ONLY — NO REAL MONEY"'
               exit 0

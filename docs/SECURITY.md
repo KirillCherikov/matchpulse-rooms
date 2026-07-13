@@ -25,13 +25,15 @@ Runtime secrets belong in `.env.local` for local work or a deployment-platform s
 
 ## Wallet and transaction policy
 
-Only a disposable devnet keypair outside this repository may be used for future TxLINE onboarding, with filesystem mode `0600`. Before any transaction, verify the official network, program ID, matching IDL/types, token mint, and on-chain pricing matrix. Stop if the selected tier is not free.
+Only the disposable devnet keypair outside this repository, with filesystem mode `0600`, was used for TxLINE onboarding. The completed subscription preflight verified Solana devnet, the pinned program/IDL/types, Token-2022 mint/account, current pricing row, account changes, fee/rent, and a successful simulation before the explicitly approved broadcast.
 
-Mainnet, paid tiers, and paid transactions require explicit human approval. The current application performs no on-chain transaction.
+The finalized `subscribe(1,4)` transaction used a zero-TxL pricing row and ordinary devnet SOL fees/account rent. The server runtime contains no wallet and performs no on-chain transaction. Mainnet, paid tiers, TxL purchases, and any future state-changing transaction require separate explicit human approval.
 
 ## Transport policy
 
-Every live payload must be validated against a schema derived from the official TxLINE contract before normalization. The current live provider has no network client and reports not ready, preventing accidental calls through guessed endpoints or headers.
+Every live JSON/SSE payload is validated against schemas derived from the pinned official TxLINE OpenAPI/examples before adaptation. The client restricts the HTTPS origin and allowed paths, refuses redirects, bounds bodies/events/retention, enforces stream ordering, renews the guest JWT only after 401, uses bounded retry/backoff and idle timeouts, and supports AbortController shutdown. Known secrets and bearer/token patterns are redacted before diagnostics reach status or logs.
+
+The process-wide live sidecar is read-only. Subscription and activation signing remain explicit local tools. Runtime fixture verification receives only the disposable **public** address, manually encodes the pinned read-only instruction, and calls Solana devnet simulation with `sigVerify: false`; it has no private key, signing call, or broadcast method. The Anchor `.view()` proof helper is an optional local reproduction path. Anonymous replay sessions are given a cloned configuration with TxLINE credentials removed.
 
 ## HTTP boundary
 

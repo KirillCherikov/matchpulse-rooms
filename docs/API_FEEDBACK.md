@@ -2,14 +2,14 @@
 
 ## What worked for the MVP
 
-The public documentation framing makes it possible to design a provider boundary and a replay-first judge path before credentials are available.
+The published OpenAPI, devnet IDL/generated types, runnable activation/stream/proof examples, explicit network table, and World Cup free-tier guide were sufficient to complete a real devnet integration without guessing endpoints or program addresses. The dual-header data authentication and 401 guest-JWT renewal behavior are clear in the current reference.
 
 ## Requested developer experience improvements
 
-1. Versioned, downloadable TypeScript schemas or JSON Schema for fixtures, odds, score events, and streaming envelopes.
-2. Explicit sequence, heartbeat, latency, replay, and recovery semantics for each stream.
-3. A sanitized historical replay fixture that can be used in hackathon demos.
-4. A clearly machine-readable pricing matrix and devnet onboarding example that makes the free tier unambiguous.
-5. End-to-end examples of validation proofs and their relationship to raw data references.
+1. Publish an explicit scale/encoding contract for integer odds `Prices`, including market-specific conversion examples. Sentinel currently preserves them rather than inventing decimal odds.
+2. Define SSE heartbeat cadence, idle expectations, retry hints, and `Last-Event-ID` retention guarantees as normative contract text.
+3. Publish versioned downloadable JSON Schema/OpenAPI snapshots and generated npm types for every supported release.
+4. Provide a small license-cleared sanitized fixture/odds/scores recording for deterministic CI and demos.
+5. Expose the pricing matrix through a documented read-only API in addition to the on-chain account, with bundle descriptions tied to IDs.
 
 These would reduce the risk of developers guessing contracts and make audited data infrastructure easier to build.

@@ -6,18 +6,19 @@ Registered schemas cover fixtures, replay state, agent status, signals, operatio
 
 ## Operations
 
-| Method | Path      | Semantics                                                                 |
-| ------ | --------- | ------------------------------------------------------------------------- |
-| GET    | `/health` | Process liveness.                                                         |
-| GET    | `/ready`  | Provider readiness; unavailable live mode returns HTTP 503 with a reason. |
+| Method | Path      | Semantics                                                                          |
+| ------ | --------- | ---------------------------------------------------------------------------------- |
+| GET    | `/health` | Process liveness.                                                                  |
+| GET    | `/ready`  | Deterministic replay/provider readiness; independent of live-sidecar availability. |
 
-Replay and mock modes are ready without credentials. Health does not imply that the intentionally incomplete live adapter is ready. `/ready` is session-free and does not allocate a replay agent or set a session cookie.
+Replay and mock modes are ready without credentials. `/ready` is session-free and does not allocate a replay agent or set a session cookie. The read-only TxLINE sidecar has independent health at `/api/live/status`, so a devnet outage or quiet stream never blocks the deterministic judge path.
 
 ## Read APIs
 
 | Method | Path                   | Response                                                                                     |
 | ------ | ---------------------- | -------------------------------------------------------------------------------------------- |
 | GET    | `/api/agent/status`    | Mode, replay state, fixture, current feed health, latest records, and simulation disclaimer. |
+| GET    | `/api/live/status`     | Session-free TxLINE devnet auth, fixture, stream, heartbeat/reconnect, and proof status.     |
 | GET    | `/api/fixtures`        | Normalized fixtures, including the synthetic-data label.                                     |
 | GET    | `/api/signals`         | Current-run explainable signals.                                                             |
 | GET    | `/api/signals/:id`     | One current-run signal or HTTP 404.                                                          |
@@ -27,6 +28,8 @@ Replay and mock modes are ready without credentials. Health does not imply that 
 | GET    | `/api/audit?limit=100` | Process-level append-only audit events; limit must be an integer from 1 to 10,000.           |
 
 Signals expose `ruleBasedConfidenceScore` and `confidenceComponents`. The score is a deterministic heuristic, not a probability. Normalized odds expose both `bookPercentage` and classical `overround`.
+
+`/api/live/status` never returns the guest JWT, API token, authorization headers, wallet data, or raw third-party records. Its proof enum is strictly `verified`, `failed`, or `unavailable`; a successful HTTP connection alone cannot produce `verified`.
 
 ## Replay write APIs
 
@@ -69,7 +72,9 @@ The cookie jar is required because every replay session is isolated by its opaqu
 - The registry is bounded to 32 sessions with a 30-minute idle lifetime, and each append-only audit log fails closed at 2,000 events.
 - When all 32 non-expired replay sessions are occupied, creation of a new session returns HTTP 503 instead of evicting an active judge session.
 - Read collections other than audit are not paginated because the synthetic run is bounded.
-- There is no live ingestion HTTP endpoint or completed TxLINE network transport.
+- Live is one process-wide read-only TxLINE devnet sidecar rather than a public ingestion endpoint. It cannot mutate replay state or open paper positions.
+- An accepted stream can be connected while awaiting covered data; no active fixture is guaranteed.
+- Official integer odds are retained without inventing a decimal conversion contract.
 - Replay mutation endpoints isolate session state and reject cross-origin browser writes, but the cookie is not user authentication.
 - State is not durable and is lost on restart.
 - CORS is disabled by default. One exact `CORS_ORIGIN` can expose stateless browser API reads, but the current cookie-backed dashboard and replay controls are intentionally same-origin and are not a supported cross-origin frontend deployment.

@@ -3,12 +3,33 @@
 TxLINE Sentinel is a compact TypeScript application. Fastify hosts REST/OpenAPI and the production dashboard, React/Vite provides the judge console, and the decision pipeline runs in one process for deterministic local replay.
 
 ```text
-TxLineProvider
-  ReplayTxLineProvider | MockTxLineProvider | LiveTxLineProvider
-              |
-       Zod input contract
-              |
-  normalized domain messages + two clocks
+Official TxLINE HTTP/SSE              ReplayTxLineProvider | MockTxLineProvider
+          |                                          |
+ strict raw Zod contracts                    domain Zod contract
+          |                                          |
+ read-only live status              normalized messages + two clocks
+          |                                          |
+          |                                  +-------+-------+
+          |                                  |               |
+          |                         data-quality state   causal correlator
+          |                                  |               |
+          |                                  +-------+-------+
+          |                                          |
+          |                           odds movement + signal rules
+          |                                          |
+          |                         paper execution + counterfactuals
+          |                                          |
+          +-----------------------------+------------+
+                                        |
+                         REST/OpenAPI | dashboard | audit
+```
+
+The authenticated live sidecar and replay decision engine are deliberately separate. Live metadata cannot mutate an anonymous replay session, and replay cannot access the sidecar credentials.
+
+The deterministic replay pipeline remains:
+
+```text
+normalized domain messages + two clocks
               |
      +--------+---------+
      |                  |
@@ -31,8 +52,8 @@ data-quality state   causal correlator
 
 | Layer        | Responsibility                                                                                                |
 | ------------ | ------------------------------------------------------------------------------------------------------------- |
-| Transport    | Future official HTTP/SSE/authentication implementation. No strategy imports raw schemas.                      |
-| Providers    | Replay, mock, or validated live message adaptation and readiness.                                             |
+| Transport    | Official devnet HTTP/SSE, dual-header authentication, 401 JWT renewal, bounded reconnect, and shutdown.       |
+| Providers    | Strict official raw schemas/adapters plus replay/mock domain providers. No strategy imports raw schemas.      |
 | Domain       | Strict transport-independent models and source/received time semantics.                                       |
 | Data quality | Per-fixture, per-feed sequence, timestamp, duplicate, latency, staleness, recovery, and bounded-memory state. |
 | Correlation  | Confirmed events that precede the market source time and were received by decision time.                      |
@@ -76,4 +97,6 @@ Cross-origin access is disabled unless `CORS_ORIGIN` is explicitly set, and repl
 
 ## Live integration boundary
 
-The live provider currently validates injected domain-shaped data and reports not ready. It does not call TxLINE. Official transport paths, headers, schemas, program artifacts, and authentication will be added only after they are verified against official documentation and safe devnet onboarding requirements.
+The process-wide sidecar calls the official devnet fixture, odds, and scores snapshots plus odds/scores SSE streams. It validates before adaptation, bounds memory and body/event size, rejects unknown origins/paths, renews the guest JWT once after HTTP 401, redacts diagnostics, and exposes only sanitized status at `/api/live/status`.
+
+Fixture and explicit confirmed soccer-event mappings can enter transport-independent models. Official integer odds are preserved as evidence, but they do not enter decimal-odds strategy calculations because Sentinel does not invent an undocumented scale. The server automatically verifies an observed fixture by fetching its official proof, encoding the pinned IDL instruction, and running an unsigned `sigVerify: false` devnet simulation. It never contains a wallet, creates a signature, or exposes a broadcast path. A separate one-shot Anchor `.view()` helper reproduces the official runnable example locally.
