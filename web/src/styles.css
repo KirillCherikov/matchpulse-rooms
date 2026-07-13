@@ -168,6 +168,77 @@ h2 {
 .panel {
   padding: 18px;
 }
+.source-panel {
+  align-items: center;
+  display: flex;
+  gap: 18px;
+  justify-content: space-between;
+  margin: 20px 0;
+}
+.source-toggle {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: flex-end;
+}
+.source-toggle button.active {
+  background: #245d98;
+  border-color: #5aa7ef;
+  box-shadow: inset 0 -2px 0 #78b7ff;
+}
+.live-panel {
+  border-top: 2px solid #49b9d2;
+  margin: 20px 0;
+}
+.live-heading {
+  align-items: flex-start;
+}
+.live-callout {
+  border-left: 3px solid #8292a5;
+  color: #b7c5d3;
+  margin: 12px 0 18px;
+  padding: 9px 12px;
+}
+.live-callout.positive {
+  background: #10241c;
+  border-color: #43bf7a;
+  color: #8ce6b6;
+}
+.live-callout.warning {
+  background: #211c10;
+  border-color: #e6b54d;
+  color: #f1d587;
+}
+.live-status-grid {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+}
+.live-facts {
+  display: grid;
+  gap: 0 18px;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin: 18px 0 0;
+}
+.live-facts > div {
+  border-top: 1px solid #253242;
+  min-width: 0;
+  padding: 12px 0;
+}
+.live-facts dd,
+.live-facts span {
+  overflow-wrap: anywhere;
+}
+.live-facts span {
+  color: #8292a5;
+  display: block;
+  font-size: 0.76rem;
+  line-height: 1.4;
+  margin-top: 5px;
+}
+.live-updated {
+  margin-top: 6px;
+}
 .control-panel {
   justify-content: space-between;
   gap: 18px;
@@ -388,7 +459,8 @@ dd {
 
 @media (max-width: 980px) {
   .overview-grid,
-  .analytics-grid {
+  .analytics-grid,
+  .live-status-grid {
     grid-template-columns: 1fr 1fr;
   }
   .detail-grid,
@@ -401,6 +473,9 @@ dd {
   }
   .control-actions {
     justify-content: flex-start;
+  }
+  .live-facts {
+    grid-template-columns: 1fr 1fr;
   }
 }
 @media (max-width: 620px) {
@@ -419,8 +494,17 @@ dd {
   }
   .overview-grid,
   .analytics-grid,
-  .facts {
+  .facts,
+  .live-status-grid,
+  .live-facts {
     grid-template-columns: 1fr;
+  }
+  .source-panel {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .source-toggle {
+    justify-content: flex-start;
   }
   .compact-table > div {
     grid-template-columns: auto 1fr;
