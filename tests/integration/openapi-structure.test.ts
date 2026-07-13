@@ -83,6 +83,7 @@ describe("OpenAPI domain schema structure", () => {
 
       const fixture = byTitle(document, "Fixture");
       expect(fixture.properties?.status?.enum).toEqual([
+        "unknown",
         "scheduled",
         "live",
         "finished",

@@ -8,6 +8,10 @@ import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
+import {
+  LiveTxLineService,
+  type LiveTxLineStatusService
+} from "./application/live-txline-service.js";
 import { SentinelAgent } from "./application/sentinel-agent.js";
 import {
   errorResponses,
@@ -22,6 +26,7 @@ import { replayControlSchema } from "./domain/schemas.js";
 interface ServerOptions {
   config?: SentinelConfig;
   agent?: SentinelAgent;
+  liveService?: LiveTxLineStatusService;
   serveDashboard?: boolean;
 }
 
@@ -169,7 +174,14 @@ class AgentSessionRegistry {
   }
 
   private replaySessionConfig(): SentinelConfig {
-    return { ...this.config, telegram: { enabled: false } };
+    const txline = structuredClone(this.config.txline);
+    delete txline.guestJwt;
+    delete txline.apiToken;
+    return {
+      ...this.config,
+      txline: { ...txline, liveEnabled: false },
+      telegram: { enabled: false }
+    };
   }
 
   private setSessionCookie(reply: FastifyReply, id: string): void {
@@ -183,6 +195,7 @@ class AgentSessionRegistry {
 export async function buildServer(options: ServerOptions = {}): Promise<FastifyInstance> {
   const config = options.config ?? options.agent?.config ?? loadConfig();
   const app = Fastify({ logger: { level: config.logLevel } });
+  const liveService = options.liveService ?? LiveTxLineService.create(config);
   const registry = new AgentSessionRegistry(config, options.agent, (error, sessionId) =>
     app.log.error({ err: error, sessionId }, "Replay scheduler stopped after runtime failure")
   );
@@ -288,6 +301,20 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
       }
     },
     async (request, reply) => registry.resolve(request, reply).agent.status()
+  );
+
+  app.get(
+    "/api/live/status",
+    {
+      schema: {
+        tags: ["Live TxLINE"],
+        summary: "Get process-wide read-only TxLINE devnet transport status",
+        description:
+          "Session-free live status. This endpoint never allocates a replay session or exposes credentials.",
+        response: { 200: { $ref: "LiveTxLineStatus#" } }
+      }
+    },
+    async () => liveService.status()
   );
 
   app.get(
@@ -607,7 +634,11 @@ export async function buildServer(options: ServerOptions = {}): Promise<FastifyI
     }
   }
 
+  app.addHook("onReady", async () => {
+    liveService.start();
+  });
   app.addHook("onClose", async () => {
+    await liveService.stop();
     registry.close();
   });
   return app;

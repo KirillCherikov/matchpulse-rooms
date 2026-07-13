@@ -2,7 +2,7 @@ export const SYNTHETIC_DEMO_LABEL = "Synthetic demo data — not a real match";
 
 export type AgentMode = "replay" | "mock" | "live";
 export type FeedKind = "odds" | "score";
-export type FixtureStatus = "scheduled" | "live" | "finished" | "cancelled";
+export type FixtureStatus = "unknown" | "scheduled" | "live" | "finished" | "cancelled";
 export type MarketKey = "match_winner";
 export type SelectionKey = "home" | "draw" | "away";
 export type MatchEventType =
@@ -33,6 +33,66 @@ export type ReplayStatus = "idle" | "running" | "paused" | "finished";
 export type PaperPositionStatus = "open" | "settled";
 export type PaperDecision = "eligible" | "opened" | "declined" | "not_eligible";
 export type PositionOutcome = "won" | "lost" | "void";
+export type VerificationStatus = "verified" | "failed" | "unavailable";
+export type LiveConnectionStatus =
+  "disabled" | "connecting" | "connected" | "reconnecting" | "disconnected" | "stopped";
+
+export interface VerificationResult {
+  status: VerificationStatus;
+  method?: string;
+  checkedAt?: string;
+  reason?: string;
+  fixtureId?: string;
+  proofTimestamp?: string;
+  programId?: string;
+  rootAccount?: string;
+  sourceCommit?: string;
+  idlVersion?: string;
+  rpcSlot?: number;
+  computeUnits?: number;
+  simulation?: "read-only-unsigned";
+}
+
+export interface LiveStreamHealth {
+  status: LiveConnectionStatus;
+  lastHeartbeatAt?: string;
+  lastEventAt?: string;
+  reconnectAttempt: number;
+  error?: string;
+}
+
+/** Sanitized official fixture metadata; score/minute are absent until a score feed observes them. */
+export interface LiveFixtureObservation {
+  id: string;
+  competition: string;
+  homeTeam: string;
+  awayTeam: string;
+  status: FixtureStatus;
+  scheduledStartTimestamp: string;
+  sourceTimestamp: string;
+  receivedTimestamp: string;
+  rawReference: string;
+  dataLabel: "Live TxLINE devnet data";
+}
+
+export interface LiveTxLineStatus {
+  enabled: boolean;
+  network: "solana-devnet";
+  connected: boolean;
+  authenticated: boolean;
+  connectionStatus: LiveConnectionStatus;
+  awaitingData: boolean;
+  latestFixture?: LiveFixtureObservation;
+  latestOddsTimestamp?: string;
+  latestScoreTimestamp?: string;
+  streams: {
+    odds: LiveStreamHealth;
+    scores: LiveStreamHealth;
+  };
+  verification: VerificationResult;
+  lastError?: string;
+  updatedAt: string;
+}
 
 export interface Fixture {
   id: string;

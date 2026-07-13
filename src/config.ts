@@ -15,6 +15,7 @@ const environmentSchema = z.object({
   HOST: z.string().min(1).default("0.0.0.0"),
   LOG_LEVEL: z.enum(["fatal", "error", "warn", "info", "debug", "trace", "silent"]).default("info"),
   TXLINE_NETWORK: z.enum(["devnet", "mainnet-beta"]).default("devnet"),
+  TXLINE_LIVE_ENABLED: z.enum(["true", "false"]).default("false"),
   TXLINE_API_ORIGIN: optionalUrl,
   TXLINE_GUEST_JWT: optionalNonEmptyString,
   TXLINE_API_TOKEN: optionalNonEmptyString,
@@ -26,6 +27,7 @@ const environmentSchema = z.object({
 });
 
 export const SENTINEL_CONFIGURATION_VERSION = "2026-07-replay-mvp";
+export const TXLINE_DEVNET_API_ORIGIN = "https://txline-dev.txodds.com";
 
 export interface SentinelConfig {
   strategyConfigurationVersion: string;
@@ -36,10 +38,17 @@ export interface SentinelConfig {
   corsOrigin?: string;
   secureSessionCookie: boolean;
   txline: {
+    liveEnabled: boolean;
     network: "devnet" | "mainnet-beta";
     apiOrigin?: string;
     guestJwt?: string;
     apiToken?: string;
+    requestTimeoutMs: number;
+    streamIdleTimeoutMs: number;
+    retryInitialDelayMs: number;
+    retryMaxDelayMs: number;
+    maxReconnectAttempts: number;
+    maxRetainedMessages: number;
   };
   telegram: {
     enabled: boolean;
@@ -83,6 +92,17 @@ export interface SentinelConfig {
 
 export function loadConfig(environment: NodeJS.ProcessEnv = process.env): SentinelConfig {
   const parsed = environmentSchema.parse(environment);
+  if (parsed.TXLINE_LIVE_ENABLED === "true") {
+    if (parsed.SENTINEL_MODE !== "replay") {
+      throw new Error("TXLINE_LIVE_ENABLED requires SENTINEL_MODE=replay");
+    }
+    if (parsed.TXLINE_NETWORK !== "devnet") {
+      throw new Error("TXLINE_LIVE_ENABLED is restricted to Solana devnet");
+    }
+    if (parsed.TXLINE_API_ORIGIN !== TXLINE_DEVNET_API_ORIGIN) {
+      throw new Error(`TXLINE_LIVE_ENABLED requires TXLINE_API_ORIGIN=${TXLINE_DEVNET_API_ORIGIN}`);
+    }
+  }
   return {
     strategyConfigurationVersion: SENTINEL_CONFIGURATION_VERSION,
     mode: parsed.SENTINEL_MODE,
@@ -92,10 +112,17 @@ export function loadConfig(environment: NodeJS.ProcessEnv = process.env): Sentin
     ...(parsed.CORS_ORIGIN ? { corsOrigin: parsed.CORS_ORIGIN } : {}),
     secureSessionCookie: parsed.SESSION_COOKIE_SECURE === "true",
     txline: {
+      liveEnabled: parsed.TXLINE_LIVE_ENABLED === "true",
       network: parsed.TXLINE_NETWORK,
       ...(parsed.TXLINE_API_ORIGIN ? { apiOrigin: parsed.TXLINE_API_ORIGIN } : {}),
       ...(parsed.TXLINE_GUEST_JWT ? { guestJwt: parsed.TXLINE_GUEST_JWT } : {}),
-      ...(parsed.TXLINE_API_TOKEN ? { apiToken: parsed.TXLINE_API_TOKEN } : {})
+      ...(parsed.TXLINE_API_TOKEN ? { apiToken: parsed.TXLINE_API_TOKEN } : {}),
+      requestTimeoutMs: 10_000,
+      streamIdleTimeoutMs: 45_000,
+      retryInitialDelayMs: 1_000,
+      retryMaxDelayMs: 30_000,
+      maxReconnectAttempts: 8,
+      maxRetainedMessages: 1_000
     },
     telegram: {
       enabled: parsed.TELEGRAM_ENABLED === "true",

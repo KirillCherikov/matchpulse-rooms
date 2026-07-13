@@ -92,11 +92,49 @@ export function registerOpenApiSchemas(app: FastifyInstance): void {
         awayTeam: { type: "string", minLength: 1 },
         status: {
           type: "string",
-          enum: ["scheduled", "live", "finished", "cancelled"]
+          enum: ["unknown", "scheduled", "live", "finished", "cancelled"]
         },
         score: ref("Score"),
         minute: { type: "integer", minimum: 0, maximum: 130 },
         dataLabel: { type: "string", minLength: 1 }
+      }
+    )
+  );
+  register(
+    app,
+    objectSchema(
+      "LiveFixtureObservation",
+      [
+        "id",
+        "competition",
+        "homeTeam",
+        "awayTeam",
+        "status",
+        "scheduledStartTimestamp",
+        "sourceTimestamp",
+        "receivedTimestamp",
+        "rawReference",
+        "dataLabel"
+      ],
+      {
+        id: externalIdentifier,
+        competition: { type: "string", minLength: 1 },
+        homeTeam: { type: "string", minLength: 1 },
+        awayTeam: { type: "string", minLength: 1 },
+        status: {
+          type: "string",
+          enum: ["unknown", "scheduled", "live", "finished", "cancelled"]
+        },
+        scheduledStartTimestamp: timestamp,
+        sourceTimestamp: timestamp,
+        receivedTimestamp: timestamp,
+        rawReference: {
+          type: "string",
+          minLength: 1,
+          maxLength: 512,
+          pattern: "^txline://fixtures/"
+        },
+        dataLabel: { type: "string", const: "Live TxLINE devnet data" }
       }
     )
   );
@@ -558,6 +596,79 @@ export function registerOpenApiSchemas(app: FastifyInstance): void {
       auditEvents: nonnegativeInteger,
       disclaimer: { type: "string", const: "SIMULATION ONLY — NO REAL MONEY" }
     })
+  );
+  register(
+    app,
+    objectSchema("VerificationResult", ["status"], {
+      status: { type: "string", enum: ["verified", "failed", "unavailable"] },
+      method: { type: "string", minLength: 1 },
+      checkedAt: timestamp,
+      reason: { type: "string", minLength: 1, maxLength: 240 },
+      fixtureId: externalIdentifier,
+      proofTimestamp: timestamp,
+      programId: { type: "string", minLength: 32, maxLength: 44 },
+      rootAccount: { type: "string", minLength: 32, maxLength: 44 },
+      sourceCommit: { type: "string", pattern: "^[0-9a-f]{40}$" },
+      idlVersion: { type: "string", minLength: 1, maxLength: 32 },
+      rpcSlot: nonnegativeInteger,
+      computeUnits: { type: "integer", minimum: 0, maximum: 1_000_000 },
+      simulation: { type: "string", const: "read-only-unsigned" }
+    })
+  );
+  register(
+    app,
+    objectSchema("LiveStreamHealth", ["status", "reconnectAttempt"], {
+      status: {
+        type: "string",
+        enum: ["disabled", "connecting", "connected", "reconnecting", "disconnected", "stopped"]
+      },
+      lastHeartbeatAt: timestamp,
+      lastEventAt: timestamp,
+      reconnectAttempt: nonnegativeInteger,
+      error: { type: "string", minLength: 1, maxLength: 240 }
+    })
+  );
+  register(
+    app,
+    objectSchema("LiveStreams", ["odds", "scores"], {
+      odds: ref("LiveStreamHealth"),
+      scores: ref("LiveStreamHealth")
+    })
+  );
+  register(
+    app,
+    objectSchema(
+      "LiveTxLineStatus",
+      [
+        "enabled",
+        "network",
+        "connected",
+        "authenticated",
+        "connectionStatus",
+        "awaitingData",
+        "streams",
+        "verification",
+        "updatedAt"
+      ],
+      {
+        enabled: { type: "boolean" },
+        network: { type: "string", const: "solana-devnet" },
+        connected: { type: "boolean" },
+        authenticated: { type: "boolean" },
+        connectionStatus: {
+          type: "string",
+          enum: ["disabled", "connecting", "connected", "reconnecting", "disconnected", "stopped"]
+        },
+        awaitingData: { type: "boolean" },
+        latestFixture: ref("LiveFixtureObservation"),
+        latestOddsTimestamp: timestamp,
+        latestScoreTimestamp: timestamp,
+        streams: ref("LiveStreams"),
+        verification: ref("VerificationResult"),
+        lastError: { type: "string", minLength: 1, maxLength: 240 },
+        updatedAt: timestamp
+      }
+    )
   );
   register(
     app,
