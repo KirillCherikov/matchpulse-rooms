@@ -109,8 +109,13 @@ describe("official TxLINE live transport", () => {
         );
       }
       if (path === "/api/scores/stream") {
+        const pascalRecord = pascalCaseTopLevel(officialGoal(1, 1_002));
         return hangingSse(
-          ["id: 1002", `:0\ndata: ${JSON.stringify(officialGoal(1, 1_002))}\n\n`],
+          [
+            'id: 1001:9\ndata: {"status":"connected"}\n\n',
+            "id: 1002",
+            `:0\ndata: ${JSON.stringify(pascalRecord)}\n\n`
+          ],
           () => {
             cancelledStreams += 1;
           }
@@ -920,6 +925,17 @@ function officialGoal(sequence: number, timestamp: number, connectionId = 99) {
       Participant2: { Total: score(0) }
     }
   };
+}
+
+function pascalCaseTopLevel(
+  value: Record<string, unknown>
+): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(value).map(([key, fieldValue]) => [
+      key.length === 0 ? key : `${key[0]!.toUpperCase()}${key.slice(1)}`,
+      fieldValue
+    ])
+  );
 }
 
 function jsonResponse(value: unknown): Response {

@@ -446,7 +446,20 @@ export class LiveTxLineProvider implements TxLineProvider, LiveTxLineRuntimeProv
     if (!event.id) throw new Error(`TxLINE ${stream} data event did not include an event ID`);
     const ordering = compareEventIds(event.id, this.lastEventIds[stream]);
     const receivedAt = this.nowIso();
-    const payload = parseJson(event.data, `${stream} data event`);
+    const rawPayload = parseJson(event.data, `${stream} data event`);
+    const payload =
+      stream === "scores" ? normalizeTxLineScoreStreamPayload(rawPayload) : rawPayload;
+
+    if (stream === "scores" && isTxLineScoreConnectionPayload(payload)) {
+      if (ordering > 0) this.lastEventIds[stream] = event.id;
+      this.emitHealth(stream, {
+        status: "connected",
+        reconnectAttempt: 0,
+        lastEventAt: receivedAt
+      });
+      return true;
+    }
+
     const parsed =
       stream === "odds" ? txLineOddsSchema.parse(payload) : txLineScoreSchema.parse(payload);
     if (ordering <= 0) return true;
@@ -831,6 +844,43 @@ function rememberSequence(
   if (values.size <= limit) return;
   const oldest = values.keys().next().value;
   if (oldest !== undefined) values.delete(oldest);
+}
+
+function normalizeTxLineScoreStreamPayload(value: unknown): unknown {
+  if (!isPlainObject(value)) return value;
+
+  const normalized: Record<string, unknown> = {};
+  for (const [key, fieldValue] of Object.entries(value)) {
+    const normalizedKey =
+      key.length === 0 ? key : `${key[0]!.toLowerCase()}${key.slice(1)}`;
+
+    if (normalizedKey in normalized) {
+      throw new Error("TxLINE scores payload contains ambiguous casing variants");
+    }
+    normalized[normalizedKey] = fieldValue;
+  }
+
+  return normalized;
+}
+
+function isTxLineScoreConnectionPayload(value: unknown): boolean {
+  if (!isPlainObject(value)) return false;
+  if ("seq" in value) return false;
+
+  const recordMarkers = [
+    "fixtureId",
+    "ts",
+    "connectionId",
+    "id",
+    "gameState",
+    "action"
+  ];
+
+  return !recordMarkers.some((key) => key in value);
+}
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function parseJson(value: string, context: string): unknown {
