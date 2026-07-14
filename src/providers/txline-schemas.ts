@@ -188,7 +188,7 @@ export const txLineScoreSchema = z
     playerStatsSoccer: z.unknown().optional(),
     playerStatsUsFootball: z.unknown().optional()
   })
-  .strict();
+  .strip();
 
 export const txLineFixtureArraySchema = z.array(txLineFixtureSchema).max(10_000);
 export const txLineOddsArraySchema = z.array(txLineOddsSchema).max(50_000);

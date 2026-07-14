@@ -789,6 +789,16 @@ describe("official TxLINE live transport", () => {
         Pct: ["50.000", "50.000"]
       })
     ).not.toThrow();
+    const extendedScore = txLineScoreSchema.parse({
+      ...officialGoal(100, 2_000),
+      parti1State: { ignored: true },
+      parti2State: { ignored: true },
+      possibleEvent: { ignored: true }
+    });
+    expect(extendedScore).not.toHaveProperty("parti1State");
+    expect(extendedScore).not.toHaveProperty("parti2State");
+    expect(extendedScore).not.toHaveProperty("possibleEvent");
+
     expect(() =>
       txLineScoreSchema.parse({ ...officialGoal(100, 2_000), action: undefined })
     ).toThrow();
