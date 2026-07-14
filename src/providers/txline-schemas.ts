@@ -63,7 +63,7 @@ export const txLineOddsSchema = z
     Bookmaker: boundedText,
     BookmakerId: nonnegativeInt32,
     SuperOddsType: boundedText,
-    GameState: optionalText,
+    GameState: optionalText.nullable(),
     InRunning: z.boolean(),
     MarketParameters: optionalText,
     MarketPeriod: optionalText,
