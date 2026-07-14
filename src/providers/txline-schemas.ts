@@ -65,8 +65,8 @@ export const txLineOddsSchema = z
     SuperOddsType: boundedText,
     GameState: optionalText.nullable(),
     InRunning: z.boolean(),
-    MarketParameters: optionalText,
-    MarketPeriod: optionalText,
+    MarketParameters: optionalText.nullable(),
+    MarketPeriod: optionalText.nullable(),
     PriceNames: z.array(z.string().min(1).max(128)).max(64).optional(),
     Prices: z.array(int32).max(64).optional(),
     Pct: z.array(pricePercentageSchema).max(64).optional()
