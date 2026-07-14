@@ -71,23 +71,7 @@ export const txLineOddsSchema = z
     Prices: z.array(int32).max(64).optional(),
     Pct: z.array(pricePercentageSchema).max(64).optional()
   })
-  .strict()
-  .superRefine((record, context) => {
-    const lengths: Array<["PriceNames" | "Prices" | "Pct", number]> = [];
-    if (record.PriceNames) lengths.push(["PriceNames", record.PriceNames.length]);
-    if (record.Prices) lengths.push(["Prices", record.Prices.length]);
-    if (record.Pct) lengths.push(["Pct", record.Pct.length]);
-    const expectedLength = lengths[0]?.[1];
-    for (const [field, length] of lengths.slice(1)) {
-      if (length !== expectedLength) {
-        context.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: [field],
-          message: "TxLINE PriceNames, Prices, and Pct arrays must align when present"
-        });
-      }
-    }
-  });
+  .strict();
 
 const txLineSoccerScoreSchema = z
   .object({

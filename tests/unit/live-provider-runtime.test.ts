@@ -755,7 +755,7 @@ describe("official TxLINE live transport", () => {
     expect(backoffAborted).toBe(true);
   });
 
-  it("maps only documented fixture state values and validates aligned official odds arrays", () => {
+  it("maps documented fixture state values and accepts independent official odds arrays", () => {
     const provider = new LiveTxLineProvider(true, 2, []);
     expect(provider.readiness()).toEqual({
       ready: false,
@@ -780,10 +780,10 @@ describe("official TxLINE live transport", () => {
     ).toThrow("casing variants must agree");
     expect(() =>
       txLineOddsSchema.parse({
-        ...officialOdds("misaligned", 2_000),
+        ...officialOdds("independent-arrays", 2_000),
         Pct: ["50.000", "50.000"]
       })
-    ).toThrow("must align");
+    ).not.toThrow();
     expect(() =>
       txLineScoreSchema.parse({ ...officialGoal(100, 2_000), action: undefined })
     ).toThrow();
